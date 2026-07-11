@@ -1,0 +1,105 @@
+{
+  "name": "agentboy",
+  "version": "2.2.5",
+  "description": "A retro handheld-console terminal for coding with AI agents.",
+  "license": "MIT",
+  "author": "Pedja Urosevic",
+  "type": "commonjs",
+  "main": "dist/main/index.js",
+  "bin": {
+    "agentboy": "bin/agentboy.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedjaurosevic/agentboy.git"
+  },
+  "homepage": "https://pedjaurosevic.github.io/agentboy/",
+  "bugs": {
+    "url": "https://github.com/pedjaurosevic/agentboy/issues"
+  },
+  "keywords": [
+    "terminal",
+    "electron",
+    "retro",
+    "gameboy",
+    "ai",
+    "agent",
+    "pair-programming",
+    "xterm",
+    "game-boy",
+    "tui",
+    "pty",
+    "crt",
+    "ai-agent"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.renderer.json --noEmit",
+    "test": "esbuild tests/unit/*.test.ts --bundle --outdir=build/tests --format=cjs --platform=node --log-level=warning && node --test build/tests/*.test.js",
+    "test:e2e": "npm run build && node --test --test-concurrency=1 tests/e2e/*.e2e.js",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "npm run typecheck && esbuild src/renderer/terminal-main.ts --bundle --outdir=dist/renderer --format=iife --target=chrome122 --loader:.json=json",
+    "copy:static": "mkdir -p dist/renderer/assets dist/renderer/assets/music && cp src/assets/music/*.mp3 dist/renderer/assets/music/ && cp src/renderer/terminal.html src/renderer/styles.css dist/renderer/ && cp src/assets/app-icon.png dist/renderer/assets/ && cp -r src/assets/cassette dist/renderer/assets/",
+    "build": "npm run build:main && npm run build:renderer && npm run copy:static",
+    "rebuild:native": "electron-rebuild -f -w node-pty",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "prepublishOnly": "npm run clean && npm run build",
+    "dev": "npm run build && electron .",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-unicode11": "^0.8.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "@types/node": "^22.10.0",
+    "electron": "^43.1.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "com.agentboy.terminal",
+    "productName": "agentboy",
+    "files": [
+      "dist/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "buildResources": "src/assets"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "src/assets/app-icon.png",
+      "category": "Utility"
+    },
+    "deb": {
+      "depends": [
+        "libappindicator3-1",
+        "libnotify4",
+        "libxss1",
+        "libx11-6"
+      ]
+    }
+  },
+  "os": [
+    "linux"
+  ]
+}

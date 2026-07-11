@@ -1,0 +1,18 @@
+node_modules/
+node_modules.*
+dist/
+/build/
+.DS_Store
+*.log
+.env
+notes/
+*.bak
+*.tgz
+scratchpad/cass/out/
+
+# Private working journals & scratch — never tracked in the public repo
+# (the files stay on disk; full history lives in the private archive repo)
+NOTE.md
+TODO.md
+PLAN.md
+scratchpad/

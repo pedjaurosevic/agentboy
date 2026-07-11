@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu (also covers Linux Mint)
+            container: ""
+          - name: Debian 12
+            container: "debian:bookworm"
+          - name: Arch Linux (also covers CachyOS)
+            container: "archlinux:base-devel"
+
+    steps:
+      - name: Install build tools (Debian)
+        if: startsWith(matrix.container, 'debian')
+        run: |
+          apt-get update
+          apt-get install -y python3 make g++ git curl ca-certificates
+
+      - name: Install build tools (Arch)
+        if: startsWith(matrix.container, 'archlinux')
+        run: pacman -Syu --noconfirm python git
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+      # E2E drives the real Electron app under Xvfb (the harness wraps itself
+      # in xvfb-run). Ubuntu job only: the distro containers lack the GUI
+      # stack and the point here is app behavior, not another distro matrix.
+      - name: E2E tests (Xvfb)
+        if: matrix.container == ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          npm run test:e2e
