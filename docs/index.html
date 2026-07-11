@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentboy — a retro handheld terminal for AI pair programming</title>
+<meta name="description" content="agentboy is a Game Boy inspired Linux terminal built for coding with AI agents: OSC 98 approval dialogs with diff inspector, git undo checkpoints, a status LED, split panes, five shell layouts and fourteen retro themes in dark, light and sepia.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f1a0f;
+    --panel: #14231a;
+    --ink: #dceccd;
+    --dim: #8fa383;
+    --green: #b9e48a;
+    --amber: #ffe08a;
+    --red: #ff2a33;
+    --line: #2d5630;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    line-height: 1.6;
+  }
+  .pixel { font-family: "Press Start 2P", monospace; }
+  /* chassis-label typography: the small screen-printed captions on the shell */
+  .label {
+    font-family: "DejaVu Sans", Verdana, sans-serif;
+    font-size: 10px; font-weight: bold; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--dim);
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+  header {
+    padding: 56px 0 40px;
+    text-align: center;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px),
+      linear-gradient(180deg, #16281a, var(--bg));
+    border-bottom: 2px solid var(--line);
+  }
+  h1.pixel { font-size: 34px; letter-spacing: 2px; color: var(--green); text-shadow: 0 0 18px rgba(185,228,138,0.35); }
+  h1 .oh { color: var(--amber); }
+  .tag { margin-top: 18px; color: var(--dim); font-size: 15px; }
+  .badges { margin-top: 22px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--green); text-decoration: none; background: rgba(45,86,48,0.25);
+  }
+  .badge:hover { background: rgba(45,86,48,0.5); }
+  .hero-shot { margin: 36px auto 0; max-width: 720px; }
+  .shot {
+    width: 100%; border-radius: 10px; border: 1px solid var(--line);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+    display: block;
+  }
+  .install {
+    margin: 26px auto 0; max-width: 620px; text-align: left;
+    background: #0a120a; border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px;
+    font-size: 14px; overflow-x: auto;
+  }
+  .install .c { color: var(--dim); }
+  .install .p { color: var(--amber); }
+  section { padding: 56px 0; }
+  section + section { border-top: 1px dashed var(--line); }
+  h2.pixel { font-size: 18px; color: var(--amber); margin-bottom: 6px; }
+  h2 .led { color: var(--red); }
+  .kicker { margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 26px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .card img { width: 100%; display: block; border-bottom: 1px solid var(--line); }
+  .card .body { padding: 16px 18px 20px; }
+  .card h3 { font-size: 14px; color: var(--green); margin-bottom: 8px; }
+  .card p { font-size: 13px; color: var(--dim); }
+  code.k { background: #0a120a; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-size: 12px; color: var(--amber); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(45,86,48,0.5); vertical-align: top; }
+  th { color: var(--green); white-space: nowrap; }
+  td:first-child { color: var(--amber); white-space: nowrap; }
+  .led-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+  .led-chip { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; }
+
+  /* ---- interactive theme gallery ---- */
+  #themes { --acc: #b9e48a; }
+  #themes h2.pixel { color: var(--acc); text-shadow: 0 0 14px color-mix(in srgb, var(--acc) 35%, transparent); }
+  .theme-bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 10px; }
+  .chip {
+    --c: #b9e48a;
+    font-family: "DejaVu Sans", Verdana, sans-serif;
+    font-size: 10px; font-weight: bold; letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 7px 12px; border-radius: 999px; cursor: pointer;
+    color: var(--c); background: transparent;
+    border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  }
+  .chip:hover { background: color-mix(in srgb, var(--c) 12%, transparent); }
+  .chip.on { background: color-mix(in srgb, var(--c) 18%, transparent); border-color: var(--c); box-shadow: 0 0 10px color-mix(in srgb, var(--c) 35%, transparent); }
+  .mode-bar { display: flex; gap: 8px; margin-bottom: 18px; }
+  .viewer { border-radius: 12px; border: 1px solid color-mix(in srgb, var(--acc) 45%, transparent); overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,0.55); }
+  .viewer img { width: 100%; display: block; }
+  .viewer-caption { margin-top: 12px; font-size: 13px; color: var(--dim); text-align: center; }
+  footer { padding: 40px 0 60px; text-align: center; color: var(--dim); font-size: 13px; border-top: 2px solid var(--line); }
+  footer a { color: var(--green); }
+  @media (max-width: 600px) { h1.pixel { font-size: 22px; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1 class="pixel">AGENTB<span class="oh">Ø</span>Y</h1>
+    <p class="tag">A retro handheld-console terminal designed for AI pair programming.<br>
+    Real PTYs, approval dialogs, git undo checkpoints — in a Game Boy shell.</p>
+    <div class="badges">
+      <a class="badge" href="https://github.com/pedjaurosevic/agentboy">GitHub</a>
+      <a class="badge" href="https://www.npmjs.com/package/agentboy">npm</a>
+      <span class="badge">Linux · X11</span>
+      <span class="badge">MIT License</span>
+      <span class="badge">Electron + xterm.js</span>
+    </div>
+    <div class="hero-shot"><img class="shot" src="shots/hero-dmg-dark.png" alt="agentboy terminal, Agentboy DMG dark theme"></div>
+    <div class="install">
+      <div class="c"># requires Node.js 20+, python3/make/g++ for node-pty</div>
+      <div><span class="p">$</span> npm install -g agentboy</div>
+      <div><span class="p">$</span> agentboy</div>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <p class="label kicker">Workflow</p>
+    <h2 class="pixel">BUILT FOR AI AGENTS</h2>
+    <p class="viewer-caption" style="text-align:left; margin: 0 0 24px;">&nbsp;</p>
+    <div class="grid">
+      <div class="card">
+        <img src="shots/approval-dialog.png" alt="OSC 98 approval dialog with YES / NO / DIFF buttons">
+        <div class="body">
+          <h3>OSC 98 approval flow</h3>
+          <p>Agents ask for permission with an escape sequence: <code class="k">OSC 98 ; prompt=…</code> pops a retro RPG dialog with <code class="k">YES</code> / <code class="k">NO</code> / <code class="k">DIFF</code>, git-checkpoints the pane's working directory on YES, opens the Diff Inspector on DIFF, and answers <code class="k">y</code>/<code class="k">n</code> back to the shell. The dialog renders on the chassis, outside PTY-paintable space — a spoofed escape sequence can't fake it. Full spec: <a href="protocol.md" style="color:var(--green)">protocol.md</a>.</p>
+        </div>
+      </div>
+      <div class="card">
+        <img src="shots/split-panes.png" alt="split panes">
+        <div class="body">
+          <h3>Split panes, real PTYs</h3>
+          <p>Terminator-style splits — every pane runs its own PTY, with draggable dividers, search, and X11 CLIPBOARD + PRIMARY support. Undo checkpoints roll back the last AI edit with one right-click.</p>
+        </div>
+      </div>
+      <div class="card">
+        <img src="shots/hero-dmg-dark.png" alt="ACTION status LED">
+        <div class="body">
+          <h3>ACTION status LED</h3>
+          <p>A traffic light on the chassis shows what's happening at a glance — and turns <b style="color:var(--red)">red</b> when the agent prints a numbered option menu or a y/n question and waits on you.</p>
+          <div class="led-row">
+            <span class="led-chip"><i class="dot" style="color:#8a7a2f;background:#8a7a2f"></i> idle</span>
+            <span class="led-chip"><i class="dot" style="color:#ffe08a;background:#ffe08a"></i> typing</span>
+            <span class="led-chip"><i class="dot" style="color:#b9e48a;background:#b9e48a"></i> agent output</span>
+            <span class="led-chip"><i class="dot" style="color:#ff2a33;background:#ff2a33"></i> needs you</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="modes">
+  <div class="wrap">
+    <p class="label kicker">Shells</p>
+    <h2 class="pixel">FIVE MODE LAYOUTS</h2>
+    <p class="kicker" style="color:var(--dim); font-size:13px;">The round MODE knob cycles the whole chassis: Compact → Full → Robo-Terminal → Robo-Grip → Fable Deck. FRAME re-liveries the robo shells and the Deck (14 stops, including vivid and faded red/orange); TONE flips them to worn-beige / ivory bodies.</p>
+    <div class="viewer" style="margin-bottom:26px;"><img src="shots/mode-cycle.gif" alt="MODE knob cycling through the five shell layouts"></div>
+    <div class="grid">
+      <div class="card"><img src="shots/mode-roboterminal.png" alt="Robo-Terminal shell, Phosphor livery"><div class="body"><h3>Robo-Terminal</h3><p>Brushed gunmetal with machined vent ribs on the side rails; keys carved in as backlit dark wells. Shown in the Phosphor livery.</p></div></div>
+      <div class="card"><img src="shots/mode-robogrip.png" alt="Robo-Grip shell, Ocean livery"><div class="body"><h3>Robo-Grip</h3><p>The Mk.III: brushed metal with rubber side grips and milled steel keys. Shown in the Sapphire Ocean livery.</p></div></div>
+      <div class="card"><img src="shots/mode-fable.png" alt="Fable Deck shell"><div class="body"><h3>Fable Deck</h3><p>Claude's own layout: midnight-indigo lacquer, brass inlay, twelve bigger keys in two rows and an engraved star chart over the controls.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="themes">
+  <div class="wrap">
+    <p class="label kicker">Chassis &amp; screen</p>
+    <h2 class="pixel">FOURTEEN THEMES · THREE TONES</h2>
+    <p class="kicker" style="color:var(--dim); font-size:13px;">Eight of the fourteen presets below — every theme also has a warm sepia tone in the app, plus eight CRT tube modes with combinable Sweep/Noise extras and 20 intensity steps.</p>
+    <div class="theme-bar" id="themeBar"></div>
+    <div class="mode-bar">
+      <button class="chip on" data-mode="dark" style="--c:#8fa383">Dark</button>
+      <button class="chip" data-mode="light" style="--c:#8fa383">Light</button>
+    </div>
+    <div class="viewer"><img id="themeShot" src="shots/theme-dmg-dark.png" alt="Agentboy DMG theme, dark"></div>
+    <p class="viewer-caption" id="themeCaption">Agentboy DMG — the classic pea-soup phosphor, dark.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="label kicker">Extras</p>
+    <h2 class="pixel">EXTRAS</h2>
+    <p class="kicker">&nbsp;</p>
+    <div class="grid">
+      <div class="card">
+        <img src="shots/saver.png" alt="cmatrix screensaver">
+        <div class="body"><h3>cmatrix screensaver</h3><p><code class="k">F9 SAVER</code> toggles <code class="k">cmatrix</code> in an overlay on its own PTY — rendered under the active CRT tube, and the same button turns it off (any key or click exits too). Install it with <code class="k">sudo apt install cmatrix</code>.</p></div>
+      </div>
+      <div class="card">
+        <img src="shots/noframe.png" alt="frameless mode">
+        <div class="body"><h3>BARE mode</h3><p><code class="k">F8 BARE</code> hides the whole chassis for a bare, distraction-free terminal; the same key or a right-click brings the shell back. Windows narrower than a third of the screen shed the toolbar automatically (slim shell).</p></div>
+      </div>
+      <div class="card">
+        <div class="body">
+          <h3>Speaker &amp; built-in tune</h3>
+          <p>The round speaker by the <code class="k">A</code> button is the master sound toggle: ON starts <i>Phosphor Drift</i>, a cozy lofi tune composed for agentboy (the speaker glows while it plays), and enables the effects — all derived from the tune itself: D-major pentatonic, soft triangle waves, plus a whisper-quiet typing tick.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="body">
+          <h3>Chassis controls</h3>
+          <table>
+            <tr><td>MODE</td><td>cycle the five shell layouts (Alt+M)</td></tr>
+            <tr><td>F1 TONE</td><td>dark / light / sepia</td></tr>
+            <tr><td>F2 FRAME</td><td>chassis frame style — 14 liveries</td></tr>
+            <tr><td>F3 THM</td><td>cycle the 14 themes</td></tr>
+            <tr><td>F4–F6</td><td>CRT mode (8 tube modes) &amp; intensity</td></tr>
+            <tr><td>F7 WEAR</td><td>new / worn / cracked chassis</td></tr>
+            <tr><td>F8 BARE</td><td>hide the chassis</td></tr>
+            <tr><td>F9 SAVER</td><td>cmatrix screensaver (toggle)</td></tr>
+            <tr><td>F10 FLOAT</td><td>free-floating resizable window</td></tr>
+            <tr><td>F11 / F12</td><td>scroll to bottom / expand over the toolbar</td></tr>
+            <tr><td>B / A</td><td>full-height column / snap to grid</td></tr>
+            <tr><td>LOOK (Alt+L)</td><td>theme · tone · CRT · FX · wear · frame, live-apply</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>MIT © Pedja Urosevic · <a href="https://github.com/pedjaurosevic/agentboy">github.com/pedjaurosevic/agentboy</a></p>
+  </div>
+</footer>
+
+<script>
+  const THEMES = [
+    { id: "dmg",       name: "Agentboy DMG",           acc: "#b9e48a", blurb: "the classic pea-soup phosphor" },
+    { id: "eink",      name: "Monochrome E-Ink",       acc: "#d8d8d8", blurb: "paper-grade grayscale" },
+    { id: "charcoal",  name: "Charcoal & Pale Yellow", acc: "#ebdca5", blurb: "soot shell, candle-lit type" },
+    { id: "gshock",    name: "G-Shock Red",            acc: "#ff2a33", blurb: "indestructible-wristwatch red; light = negative LCD" },
+    { id: "dystopian", name: "Dystopian Terminal",     acc: "#ff9d3a", blurb: "burnt amber for late-night ops" },
+    { id: "phosphor",  name: "Phosphor Monitor",       acc: "#6ee14f", blurb: "glass-green CRT glow" },
+    { id: "cyberpunk", name: "Cyberpunk Neon",         acc: "#d7a9f7", blurb: "violet noir with neon accents" },
+    { id: "ocean",     name: "Sapphire Ocean",         acc: "#9fd8f0", blurb: "cool blue depths" },
+  ];
+  const bar = document.getElementById("themeBar");
+  const img = document.getElementById("themeShot");
+  const cap = document.getElementById("themeCaption");
+  const section = document.getElementById("themes");
+  let cur = THEMES[0], mode = "dark";
+  const render = () => {
+    img.src = `shots/theme-${cur.id}-${mode}.png`;
+    img.alt = `${cur.name} theme, ${mode}`;
+    cap.textContent = `${cur.name} — ${cur.blurb}, ${mode}.`;
+    section.style.setProperty("--acc", cur.acc);
+    for (const b of bar.children) b.classList.toggle("on", b.dataset.id === cur.id);
+    for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === mode);
+  };
+  for (const t of THEMES) {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.dataset.id = t.id;
+    b.style.setProperty("--c", t.acc);
+    b.textContent = t.name;
+    b.addEventListener("click", () => { cur = t; render(); });
+    bar.appendChild(b);
+  }
+  for (const b of document.querySelectorAll("[data-mode]"))
+    b.addEventListener("click", () => { mode = b.dataset.mode; render(); });
+  render();
+</script>
+
+</body>
+</html>

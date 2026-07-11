@@ -1,0 +1,3303 @@
+/* Retro terminal renderer. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  user-select: none;
+  cursor: default;
+}
+
+#err {
+  position: fixed;
+  left: 8px;
+  bottom: 6px;
+  color: #ff6b6b;
+  font-size: 12px;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+/* ---- Game Boy chassis ---------------------------------------------------- */
+.gb {
+  --term-bg: #1a1c1e;
+  --term-pane-bg: #1a1c1e;
+  --term-active: #ebdca5;
+  --term-cursor: #ebdca5;
+  --term-cursor-accent: #1a1c1e;
+  --term-divider: #2c2e30;
+  --term-divider-hover: #484a4c;
+  --term-screen-glow: rgba(235, 220, 165, 0.15);
+  --term-scanline: rgba(0, 0, 0, 0.16);
+  --term-vignette: rgba(0, 0, 0, 0.42);
+  --term-crt-glow: rgba(235, 220, 165, 0.15);
+  --crt-intensity: 0.27;
+  --crt-line-alpha: 0.14;
+  --crt-mask-alpha: 0.026;
+  --crt-sheen: 0.04;
+  --crt-glow-strength: 1.16;
+  --crt-flicker-strength: 0.022;
+  --crt-warp: 0.4px;
+  --crt-bloom: 0px;
+  --crt-bulge: 0;
+  --crt-corner: 4px;
+  --crt-noise: 0.064;
+  --term-fg: #ebdca5;
+  --term-divider-sep: rgba(235, 220, 165, 0.25);
+  --menu-bg: #1a1c1e;
+  --menu-border: #2c2e30;
+  --menu-fg: #ebdca5;
+  --menu-hover-bg: #343638;
+  --menu-hover-fg: #ebdca5;
+  --menu-disabled: #626466;
+  --search-bg: #1a1c1e;
+  --search-border: #2c2e30;
+  --search-input-bg: #1a1c1e;
+  --search-fg: #ebdca5;
+  --search-button-bg: #343638;
+  --search-button-fg: #ebdca5;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  /* molded matte-black plastic body */
+  background:
+    radial-gradient(130% 80% at 50% 0%, rgba(255, 255, 255, 0.05), transparent 55%),
+    linear-gradient(180deg, #1a1b1f 0%, #141518 55%, #0d0e11 100%);
+  border: 2px solid #35363b;
+  border-radius: 16px 16px 26px 26px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.65),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  /* thinner top/bottom/sides borders for maximum writing area */
+  padding: 4px 6px 6px;
+  box-sizing: border-box;
+  overflow: hidden; /* clip children (e.g. the grille) to the rounded corners */
+  pointer-events: auto;
+}
+.gb.full {
+  top: 0; /* fill the whole screen in fullscreen */
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
+.gb.light {
+  --term-bg: #c2cbb5;
+  --term-pane-bg: #c2cbb5;
+  --term-active: #1c1d22;
+  --term-cursor: #1c1d22;
+  --term-cursor-accent: #dddddd;
+  --term-divider: #c2cbb5;
+  --term-divider-hover: #a3ad96;
+  --term-screen-glow: rgba(40, 60, 20, 0.08);
+  --term-scanline: rgba(45, 55, 33, 0.07);
+  --term-vignette: rgba(45, 55, 33, 0.16);
+  --term-crt-glow: rgba(40, 60, 20, 0.08);
+  --term-fg: #1c1d22;
+  --term-divider-sep: rgba(28, 29, 34, 0.15);
+  --menu-bg: #c2cbb5;
+  --menu-border: #a3ad96;
+  --menu-fg: #1c1d22;
+  --menu-hover-bg: #d5ddca;
+  --menu-hover-fg: #1c1d22;
+  --menu-disabled: #8d929c;
+  --search-bg: #c2cbb5;
+  --search-border: #a3ad96;
+  --search-input-bg: #c2cbb5;
+  --search-fg: #1c1d22;
+  --search-button-bg: #d5ddca;
+  --search-button-fg: #1c1d22;
+  /* warm DMG-cream molded plastic body */
+  background:
+    radial-gradient(130% 80% at 50% 0%, rgba(255, 255, 255, 0.5), transparent 55%),
+    linear-gradient(180deg, #eae4d6 0%, #ded7c6 55%, #cfc7b3 100%);
+  border: 2px solid #b3ab98;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -4px 10px rgba(90, 80, 60, 0.22),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Color E-Ink Sage Green šasija */
+.gb.eink-color {
+  background: #c2cbb5;
+  border: 2px solid #a3ad96;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4),
+              inset 0 -2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.gb.eink-color .gb-top,
+.gb.eink-color .gb-bottom {
+  color: #384230;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* Status semafor with subdued shell colors */
+.gb.eink-color .gb-semafor {
+  border-color: rgba(70, 74, 62, 0.45);
+  background: rgba(80, 94, 70, 0.12);
+}
+
+.gb-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 4px;
+  color: #d9d6cc;
+  font-size: 12px;
+  cursor: move;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+.gb.light .gb-top {
+  color: #3a352b;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+/* AGENTBØY wordmark + mode subtitle (screen-printed on the shell) */
+.gb-wordmark {
+  font-family: "DejaVu Sans", Verdana, sans-serif;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  color: #f1efe8;
+}
+.gb.light .gb-wordmark {
+  color: #33302a;
+}
+.gb-subtitle {
+  margin-left: 8px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+/* DOT MATRIX WITH STEREO SOUND + two-tone bezel stripes */
+.gb-dotmatrix {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: 4px;
+}
+.gb-stripes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.gb-stripes i {
+  display: block;
+  width: 34px;
+  height: 2px;
+  border-radius: 1px;
+}
+.gb-stripes i:first-child {
+  background: #8c2f45; /* burgundy */
+}
+.gb-stripes i:last-child {
+  background: #3a4a7c; /* navy */
+}
+.gb-dotmatrix-text {
+  font-size: 6.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.gb-semafor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  margin: 0 2px 0 0;
+  padding: 3px 5px;
+  border: 1px solid rgba(0,0,0,0.22);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.1);
+  cursor: pointer;
+}
+.gb-semafor i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  opacity: 0.28;
+  box-shadow: inset 0 1px 1px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,0,0,0.16);
+}
+.gb-signal-green { background: #7cff6b; }
+.gb-signal-yellow { background: #f5c542; }
+.gb-signal-red { background: #ff4b4b; }
+.gb-semafor.status-idle .gb-signal-yellow,
+.gb-semafor.status-agent .gb-signal-green,
+.gb-semafor.status-user .gb-signal-yellow,
+.gb-semafor.status-needs-user .gb-signal-red {
+  opacity: 1;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.25), 0 0 4px currentColor, 0 0 0 1px rgba(0,0,0,0.2);
+}
+.gb-semafor.status-idle .gb-signal-yellow {
+  color: #b99a38;
+  opacity: 0.58;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.15), 0 0 2px rgba(245,197,66,0.28), 0 0 0 1px rgba(0,0,0,0.18);
+}
+.gb-semafor.status-agent .gb-signal-green { color: #7cff6b; }
+.gb-semafor.status-user .gb-signal-yellow {
+  color: #f5c542;
+  opacity: 1;
+  animation: led-pulse 1s infinite alternate ease-in-out;
+}
+.gb-semafor.status-needs-user .gb-signal-red {
+  color: #ff4b4b;
+  animation: led-blink 0.45s infinite steps(2);
+}
+
+@keyframes led-pulse {
+  0% {
+    opacity: 0.45;
+    filter: brightness(0.85);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1.15);
+  }
+}
+@keyframes led-blink {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1.2);
+  }
+  50% {
+    opacity: 0.2;
+    filter: brightness(0.5);
+  }
+}
+.gb-title {
+  letter-spacing: 1px;
+  font-weight: 700;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gb-window-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.gb-min,
+.gb-full,
+.gb-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: #2f3036;
+  color: #f2eedd;
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+  position: relative;
+  overflow: hidden;
+}
+.gb-min:hover,
+.gb-full:hover {
+  background: #3c3d44;
+}
+.gb.light .gb-min,
+.gb.light .gb-full {
+  background: #b0a892;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+.gb.light .gb-min:hover,
+.gb.light .gb-full:hover {
+  background: #9d9580;
+}
+.gb-close {
+  background: #b5524a;
+  color: #fff;
+  font-size: 14px;
+}
+.gb-close:hover {
+  background: #9e423b;
+}
+.gb-min,
+.gb-full {
+  color: transparent;
+}
+.gb-min::before,
+.gb-full::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+}
+.gb-min::before {
+  width: 11px;
+  height: 2px;
+  border-radius: 999px;
+  background: #f2eedd;
+  transform: translate(-50%, 4px);
+}
+.gb-full::before {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #f2eedd;
+  border-radius: 1px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+}
+
+.gb-screen {
+  position: relative;
+  flex: 1;
+  margin-right: 0;
+  border-radius: 8px;
+  background: var(--term-bg);
+  padding: 3px 5px;
+  /* recessed LCD: dark bezel ring + drop-in shadow from the top lip,
+     bottom highlight sells the depth of the cutout */
+  border: 1px solid rgba(0, 0, 0, 0.9);
+  box-shadow:
+    inset 0 4px 10px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.35),
+    0 1px 0 rgba(255, 255, 255, 0.07);
+}
+/* the pane tree fills the bezel; each pane holds one xterm + CRT overlay */
+#panes {
+  position: absolute;
+  inset: 3px 5px;
+  display: flex;
+}
+
+.gb-middle {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 4px;
+  min-height: 0;
+}
+
+.gb-split {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+.gb-pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--term-pane-bg);
+  border-radius: 4px;
+}
+.gb-pane.active {
+  box-shadow: inset 0 0 0 1px var(--term-active);
+}
+.gb-divider {
+  flex: 0 0 auto;
+  position: relative;
+  background: transparent;
+}
+.gb-divider.vert {
+  width: 6px;
+  cursor: col-resize;
+}
+.gb-divider.horiz {
+  height: 6px;
+  cursor: row-resize;
+}
+.gb-divider::before {
+  content: "";
+  position: absolute;
+  border-radius: 2px;
+  background: var(--term-divider);
+  box-shadow: inset 0 0 0 1px rgba(40, 55, 35, 0.7),
+    0 0 8px var(--term-screen-glow);
+}
+.gb-divider.vert::before {
+  top: 4px;
+  bottom: 4px;
+  left: 2px;
+  width: 2px;
+}
+.gb-divider.horiz::before {
+  left: 4px;
+  right: 4px;
+  top: 2px;
+  height: 2px;
+}
+.gb-divider:hover::before {
+  background: var(--term-divider-hover);
+}
+.gb-term {
+  position: absolute;
+  inset: 0;
+  background: var(--term-pane-bg);
+}
+.gb-term .xterm {
+  height: 100%;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  background: var(--term-pane-bg);
+  filter: none;
+}
+.gb.light .gb-term .xterm {
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+}
+.gb-term .xterm-screen,
+.gb-term .xterm-rows,
+.gb-term .xterm-rows > div,
+.gb-term .xterm-rows span,
+.gb-term .xterm-helper-textarea {
+  background: var(--term-pane-bg);
+  background-color: var(--term-pane-bg) !important;
+}
+.gb-term .xterm .xterm-cursor-layer .xterm-cursor {
+  visibility: visible;
+}
+@keyframes retro-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.gb-term .xterm .xterm-cursor-layer .xterm-cursor {
+  background-color: var(--term-cursor) !important;
+  color: var(--term-cursor-accent) !important;
+}
+
+.gb-term .xterm .xterm-cursor-layer .xterm-cursor.xterm-cursor-blink {
+  animation: retro-blink 1s step-end infinite !important;
+}
+
+.gb-term .xterm-rows span.xterm-cursor {
+  background: var(--term-cursor) !important;
+  background-color: var(--term-cursor) !important;
+  color: var(--term-cursor-accent) !important;
+}
+
+.gb-term .xterm-rows.xterm-focus span.xterm-cursor.xterm-cursor-blink {
+  animation: retro-blink 1s step-end infinite !important;
+}
+.gb-term .xterm-viewport {
+  background: transparent !important;
+  overflow-y: auto; /* enable scrollback */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.gb-term .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* CRT overlay — five modes, set as classes on .gb: (default) shadow mask,
+   .crt-grille, .crt-slot, .crt-glass, .crt-off. Two blend planes per pane:
+   .crt::before DARKENS (multiply: mask patterns, scanlines, tube-corner
+   shading) and .crt::after BRIGHTENS (screen: phosphor glow, glass sheen,
+   bulge highlights). multiply mathematically cannot render anything white,
+   which is why sheen/glow live on their own screen-blend plane.
+   The .crt element itself must NEVER get transform/opacity/filter — any of
+   those isolates the stacking context and the pseudo planes stop blending
+   with the terminal text below.
+   The scanline rhythm is FIXED at 3px so the lines can never spread into
+   ruled-notebook stripes — CRT-/CRT+ scale intensity (alpha), never spacing. */
+.crt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: var(--crt-corner, 4px);
+}
+.crt::before,
+.crt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+/* Dark plane: shadow-mask default — scanlines + RGB triads + tube shading */
+.crt::before {
+  mix-blend-mode: multiply;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, var(--crt-line-alpha)) 0 1px,
+      transparent 1px 3px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 0, 0, var(--crt-mask-alpha)) 0 1px,
+      rgba(0, 255, 140, calc(var(--crt-mask-alpha) * 0.82)) 1px 2px,
+      rgba(80, 160, 255, calc(var(--crt-mask-alpha) * 0.7)) 2px 3px
+    ),
+    radial-gradient(130% 130% at 50% 45%, transparent 54%, var(--term-vignette) 100%);
+  animation: crt-flicker 5.2s infinite steps(80), crt-drift 9s infinite ease-in-out;
+}
+/* Light plane: phosphor glow bleeding in from the tube edges + glass sheen */
+.crt::after {
+  mix-blend-mode: screen;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, calc(var(--crt-sheen) * 0.5)) 0%,
+      transparent 20%,
+      transparent 84%,
+      rgba(255, 255, 255, calc(var(--crt-sheen) * 0.2)) 100%
+    );
+  box-shadow:
+    inset 0 0 calc(16px + var(--crt-intensity) * 22px)
+      color-mix(in srgb, var(--term-crt-glow) calc(var(--crt-glow-strength) * 100%), transparent);
+}
+@keyframes crt-flicker {
+  0%, 100% { opacity: 1; }
+  8% { opacity: calc(1 - var(--crt-flicker-strength) * 0.35); }
+  9% { opacity: 1; }
+  32% { opacity: calc(1 - var(--crt-flicker-strength) * 0.2); }
+  33% { opacity: 0.98; }
+  63% { opacity: calc(1 - var(--crt-flicker-strength) * 0.45); }
+  64% { opacity: 1; }
+  81% { opacity: calc(1 - var(--crt-flicker-strength) * 0.25); }
+}
+/* Vertical drift only — a scaleY here would beat against the fixed 3px
+   scanline rhythm and produce moiré bands. */
+@keyframes crt-drift {
+  0%, 100% { transform: translateY(0); }
+  48% { transform: translateY(calc(var(--crt-warp) * -0.4)); }
+  52% { transform: translateY(calc(var(--crt-warp) * 0.6)); }
+}
+
+/* Screen-level CRT is hidden by default; it is the bare-glass hint shown in
+   the Off state. It renders on the element itself — the blend planes are
+   disabled so no mask pattern can leak into "CRT Off". */
+.gb-screen > .crt {
+  display: none;
+  inset: 0;
+  border-radius: 6px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, calc(var(--crt-sheen) * 0.4)) 0%,
+      transparent 16%,
+      transparent 82%,
+      rgba(0, 0, 0, calc(var(--crt-sheen) * 0.7)) 100%
+    ),
+    radial-gradient(
+      130% 130% at 50% 45%,
+      transparent 56%,
+      var(--term-vignette) 100%
+    );
+  box-shadow:
+    inset 0 0 calc(14px + var(--crt-intensity) * 10px) color-mix(in srgb, var(--term-crt-glow) calc(var(--crt-glow-strength) * 60%), transparent);
+  animation: none;
+}
+.gb-screen > .crt::before,
+.gb-screen > .crt::after {
+  content: none;
+}
+
+/* ---- Dystopian battle scars ---------------------------------------------
+   A hairline crack in the screen glass, top-right corner, shown only while
+   the Dystopian theme is active. Dark stroke + offset light stroke reads as
+   light refracting in a crack; quiet enough to never fight the text. */
+.gb-crack {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 220px;
+  height: 220px;
+  pointer-events: none;
+  z-index: 30;
+  display: none;
+  opacity: 0.55;
+  background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20220%20220%22%3E%3Cg%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%3E%3Cg%20stroke%3D%22rgba%280%2C0%2C0%2C0.5%29%22%20stroke-width%3D%221.1%22%3E%3Cpath%20d%3D%22M219%2014%20L197%2030%20L173%2039%20L152%2060%20L138%2068%20L121%2088%20L114%20103%22%2F%3E%3Cpath%20d%3D%22M197%2030%20L189%2012%22%2F%3E%3Cpath%20d%3D%22M173%2039%20L154%2028%20L140%2027%22%2F%3E%3Cpath%20d%3D%22M152%2060%20L163%2082%20L158%20101%22%2F%3E%3Cpath%20d%3D%22M138%2068%20L116%2072%20L101%2066%22%2F%3E%3Cpath%20d%3D%22M121%2088%20L104%2096%22%2F%3E%3C%2Fg%3E%3Cg%20stroke%3D%22rgba%28255%2C255%2C255%2C0.38%29%22%20stroke-width%3D%220.7%22%3E%3Cpath%20d%3D%22M219.8%2014.8%20L197.8%2030.8%20L173.8%2039.8%20L152.8%2060.8%20L138.8%2068.8%20L121.8%2088.8%20L114.8%20103.8%22%2F%3E%3Cpath%20d%3D%22M197.8%2030.8%20L189.8%2012.8%22%2F%3E%3Cpath%20d%3D%22M173.8%2039.8%20L154.8%2028.8%20L140.8%2027.8%22%2F%3E%3Cpath%20d%3D%22M152.8%2060.8%20L163.8%2082.8%20L158.8%20101.8%22%2F%3E%3Cpath%20d%3D%22M138.8%2068.8%20L116.8%2072.8%20L101.8%2066.8%22%2F%3E%3Cpath%20d%3D%22M121.8%2088.8%20L104.8%2096.8%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E") no-repeat top right / contain;
+}
+.gb.theme-dystopian .gb-crack {
+  display: block;
+}
+.gb.light.theme-dystopian .gb-crack {
+  opacity: 0.45;
+}
+
+/* Dim the CRT planes while text is selected in the pane — the multiply plane
+   otherwise darkens the selection veil to near invisibility. Opacity goes on
+   the pseudo planes, never on .crt itself (it would isolate the blending). */
+.gb-pane.has-selection .crt::before,
+.gb-pane.has-selection .crt::after {
+  opacity: 0.3;
+  animation-play-state: paused;
+}
+
+/* Aperture grille (Trinitron): crisp vertical RGB stripes, no horizontal
+   scanlines, no flicker/drift — plus the Trinitron signature: two hairline
+   damper wires at 1/3 and 2/3 of the tube height. */
+.gb.crt-grille :is(.gb-pane, .gb-saver-overlay) .crt::before {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 0, 0, calc(var(--crt-mask-alpha) * 1.6)) 0 1px,
+      rgba(0, 255, 140, calc(var(--crt-mask-alpha) * 1.31)) 1px 2px,
+      rgba(80, 160, 255, calc(var(--crt-mask-alpha) * 1.12)) 2px 3px
+    ),
+    linear-gradient(
+      180deg,
+      transparent calc(33.3% - 1px),
+      rgba(0, 0, 0, calc(var(--crt-line-alpha) * 0.85)) calc(33.3% - 1px) 33.3%,
+      transparent 33.3% calc(66.6% - 1px),
+      rgba(0, 0, 0, calc(var(--crt-line-alpha) * 0.85)) calc(66.6% - 1px) 66.6%,
+      transparent 66.6%
+    ),
+    radial-gradient(130% 130% at 50% 45%, transparent 54%, var(--term-vignette) 100%);
+  animation: none;
+}
+
+/* Slot mask (in-line gun CRT, arcade/TV look): vertical RGB stripes broken
+   into brick-like slots by a 5px horizontal rhythm; keeps a light flicker. */
+.gb.crt-slot :is(.gb-pane, .gb-saver-overlay) .crt::before {
+  /* Slot boost (2026-07-11): stronger multipliers + a thicker 2px slot bar —
+     at typical intensities slot used to read identical to shadow mask. */
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, calc(var(--crt-line-alpha) * 1.05)) 0 2px,
+      transparent 2px 7px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 0, 0, calc(var(--crt-mask-alpha) * 1.7)) 0 1px,
+      rgba(0, 255, 140, calc(var(--crt-mask-alpha) * 1.4)) 1px 2px,
+      rgba(80, 160, 255, calc(var(--crt-mask-alpha) * 1.19)) 2px 3px
+    ),
+    radial-gradient(130% 130% at 50% 45%, transparent 54%, var(--term-vignette) 100%);
+  animation: crt-flicker 5.2s infinite steps(80);
+}
+
+/* Glass: no lines and no mask — a curved pane of glass over the phosphor.
+   The dark plane is only the tube-curvature shading (deepens with bulge);
+   the light plane carries the sheen plus two specular highlights whose
+   strength scales with --crt-bulge, so raising the intensity visibly
+   "inflates" the imaginary glass layer. */
+.gb.crt-glass :is(.gb-pane, .gb-saver-overlay) .crt::before {
+  background:
+    radial-gradient(
+      118% 132% at 50% 46%,
+      transparent calc(62% - var(--crt-bulge) * 14%),
+      var(--term-vignette) 100%
+    );
+  animation: none;
+}
+/* Scanlines: clean horizontal scanline overlay, no RGB mask pattern */
+.gb.crt-scanlines :is(.gb-pane, .gb-saver-overlay) .crt::before {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, var(--crt-line-alpha)) 0 1px,
+      transparent 1px 3px
+    ),
+    radial-gradient(130% 130% at 50% 45%, transparent 54%, var(--term-vignette) 100%);
+  animation: crt-flicker 5.2s infinite steps(80), crt-drift 9s infinite ease-in-out;
+}
+/* Vector: Vectrex-style glowing vector display, no scanlines/mask, strong glow/bloom */
+.gb.crt-vector :is(.gb-pane, .gb-saver-overlay) .crt::before {
+  background:
+    radial-gradient(
+      118% 132% at 50% 46%,
+      transparent calc(62% - var(--crt-bulge) * 14%),
+      var(--term-vignette) 100%
+    );
+  animation: crt-flicker 4.2s infinite steps(60), crt-drift 7s infinite ease-in-out;
+}
+/* CRT Full shares the curved-pane optics on the light plane — its dark
+   plane simply keeps the base shadow-mask pattern, so the tube pattern and
+   the glass live together. */
+.gb.crt-glass :is(.gb-pane, .gb-saver-overlay) .crt::after,
+.gb.crt-full :is(.gb-pane, .gb-saver-overlay) .crt::after,
+.gb.crt-vector :is(.gb-pane, .gb-saver-overlay) .crt::after {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, calc(var(--crt-sheen) * 0.55)) 0%,
+      transparent 24%,
+      transparent 82%,
+      rgba(255, 255, 255, calc(var(--crt-sheen) * 0.22)) 100%
+    ),
+    radial-gradient(
+      ellipse 130% 55% at 50% -18%,
+      rgba(255, 255, 255, calc(var(--crt-bulge) * 0.14)) 0%,
+      rgba(255, 255, 255, calc(var(--crt-bulge) * 0.045)) 42%,
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 34% 14% at 28% 9%,
+      rgba(255, 255, 255, calc(var(--crt-bulge) * 0.18)),
+      transparent 70%
+    );
+}
+
+/* On paper themes a white sheen physically cannot show on an already-bright
+   screen — real glass over a bright page reads as DARKER reflections. Light
+   themes swap the highlight for a diagonal sky-reflection pair (cool
+   gray-blue on the multiply plane): one broad streak plus a thinner echo,
+   both inflating with --crt-bulge like the dark-theme highlights do. */
+.gb.light.crt-glass :is(.gb-pane, .gb-saver-overlay) .crt::before {
+  background:
+    linear-gradient(
+      115deg,
+      transparent 0%,
+      transparent 30%,
+      rgba(62, 78, 104, calc(var(--crt-bulge) * 0.1)) 40%,
+      rgba(62, 78, 104, calc(var(--crt-bulge) * 0.16)) 48%,
+      transparent 58%,
+      transparent 66%,
+      rgba(62, 78, 104, calc(var(--crt-bulge) * 0.07)) 72%,
+      transparent 80%
+    ),
+    radial-gradient(
+      118% 132% at 50% 46%,
+      transparent calc(58% - var(--crt-bulge) * 14%),
+      var(--term-vignette) 100%
+    );
+  animation: none;
+}
+
+/* Full on paper themes: the mask pattern AND the sky-reflection streaks
+   share the dark plane — tube texture under visibly reflecting glass. */
+.gb.light.crt-full :is(.gb-pane, .gb-saver-overlay) .crt::before {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, var(--crt-line-alpha)) 0 1px,
+      transparent 1px 3px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 0, 0, var(--crt-mask-alpha)) 0 1px,
+      rgba(0, 255, 140, calc(var(--crt-mask-alpha) * 0.82)) 1px 2px,
+      rgba(80, 160, 255, calc(var(--crt-mask-alpha) * 0.7)) 2px 3px
+    ),
+    linear-gradient(
+      115deg,
+      transparent 0%,
+      transparent 30%,
+      rgba(62, 78, 104, calc(var(--crt-bulge) * 0.1)) 40%,
+      rgba(62, 78, 104, calc(var(--crt-bulge) * 0.16)) 48%,
+      transparent 58%,
+      transparent 66%,
+      rgba(62, 78, 104, calc(var(--crt-bulge) * 0.07)) 72%,
+      transparent 80%
+    ),
+    radial-gradient(
+      118% 132% at 50% 46%,
+      transparent calc(58% - var(--crt-bulge) * 14%),
+      var(--term-vignette) 100%
+    );
+}
+
+/* Toggle visibility based on crt-off class on .gb container */
+.gb.crt-off :is(.gb-pane, .gb-saver-overlay) .crt {
+  display: none !important;
+}
+
+.gb.crt-off .gb-screen > .crt {
+  display: block !important;
+}
+
+.gb.light .gb-screen {
+  border-color: #3d3f46; /* charcoal bezel plate, like the DMG, even on cream shell */
+  box-shadow:
+    inset 0 4px 9px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 2px rgba(40, 42, 48, 0.35),
+    0 1px 0 rgba(255, 255, 255, 0.65);
+}
+.gb.light .crt::before {
+  animation: none;
+}
+
+/* Phosphor bloom: bright glyphs bleed a little light, like phosphor dots
+   over-exciting their neighbours. text-shadow is inherited, so one rule on
+   the row container covers every span; the class is toggled off entirely at
+   zero radius so idle panes pay no paint cost. Dark themes only — dark ink
+   blooming on paper just reads as smudge. */
+.gb.crt-bloom :is(.gb-pane, .gb-saver-overlay) .xterm .xterm-rows {
+  text-shadow: 0 0 var(--crt-bloom, 0px) currentColor;
+}
+
+/* Dystopian static: a whisper of broadcast noise on the screen-blend plane.
+   Only while the Dystopian theme is active and the CRT is on. */
+.crt-noise {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  border-radius: inherit;
+  mix-blend-mode: screen;
+  opacity: var(--crt-noise, 0);
+  background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22180%22%20height%3D%22180%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.9%22%20numOctaves%3D%222%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22saturate%22%20values%3D%220%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23n)%22%2F%3E%3C%2Fsvg%3E");
+  background-size: 180px 180px;
+  animation: crt-noise-jitter 0.7s steps(5) infinite;
+}
+@keyframes crt-noise-jitter {
+  0% { background-position: 0 0; }
+  20% { background-position: -37px 53px; }
+  40% { background-position: 61px -22px; }
+  60% { background-position: -14px -71px; }
+  80% { background-position: 44px 34px; }
+  100% { background-position: 0 0; }
+}
+.gb.theme-dystopian:not(.crt-off) :is(.gb-pane, .gb-saver-overlay) .crt .crt-noise {
+  display: block;
+}
+/* NOISE as a user FX (LOOK menu): the same broadcast-noise plane, on any
+   theme, combinable with every CRT mode. */
+.gb.crt-fx-noise:not(.crt-off) :is(.gb-pane, .gb-saver-overlay) .crt .crt-noise {
+  display: block;
+}
+
+/* SWEEP — the retrace band: a soft bright bar rolling down the tube, like
+   pointing a camera at a real CRT. Its own plane inside .crt (screen blend,
+   same rules as ::after); transform-only animation so it stays cheap.
+   Strength rides --crt-intensity so CRT- / CRT+ scale it like everything. */
+.crt-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 24%;
+  display: none;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(255, 255, 255, calc(var(--crt-intensity) * 0.022)) 38%,
+    rgba(255, 255, 255, calc(var(--crt-intensity) * 0.05)) 50%,
+    rgba(255, 255, 255, calc(var(--crt-intensity) * 0.022)) 62%,
+    transparent 100%
+  );
+  animation: crt-sweep 6.5s linear infinite;
+}
+@keyframes crt-sweep {
+  0% { transform: translateY(-110%); }
+  100% { transform: translateY(540%); }
+}
+.gb.crt-fx-sweep:not(.crt-off) :is(.gb-pane, .gb-saver-overlay) .crt .crt-sweep {
+  display: block;
+}
+/* Paper tones: a white screen-blend band physically can't show on a bright
+   page — flip the sweep to a soft dark multiply band so the toggle stays
+   visibly alive in Light/Sepia too. */
+.gb.light .crt-sweep {
+  mix-blend-mode: multiply;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(40, 44, 52, calc(var(--crt-intensity) * 0.016)) 38%,
+    rgba(40, 44, 52, calc(var(--crt-intensity) * 0.038)) 50%,
+    rgba(40, 44, 52, calc(var(--crt-intensity) * 0.016)) 62%,
+    transparent 100%
+  );
+}
+
+/* Turn-on flash: a one-shot overlay the JS drops on the screen when the CRT
+   comes back from Off — the picture collapses in as a bright horizontal
+   line that snaps open, old-tube style. Removed on animationend. */
+.gb-crt-poweron {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent calc(50% - 2px),
+    rgba(255, 255, 255, 0.95) calc(50% - 1px) calc(50% + 1px),
+    transparent calc(50% + 2px),
+    transparent 100%
+  );
+  animation: crt-poweron 0.42s ease-out forwards;
+}
+@keyframes crt-poweron {
+  0% { transform: scaleY(1); opacity: 1; }
+  45% { transform: scaleY(1); opacity: 1; }
+  100% { transform: scaleY(220); opacity: 0; }
+}
+
+.gb-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* headroom for the printed function labels above the keys (sized for the
+     9.5px F-captions). The 24px side padding matches the robo-terminal bar
+     so the MODE→speaker cluster sits at the SAME spot in all three
+     layouts — no jump when cycling modes. */
+  padding: 15px 24px 2px;
+  color: #d7d2c3;
+  font-size: 13px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+/* Slim shell: window narrower than a third of the screen (set from JS as
+   .slim). Everything printed or clickable on the chassis strips collides at
+   that width, so it all goes — bare frame around the screen. Window controls
+   survive (the window must stay closable/movable). */
+.gb.slim .gb-bottom { display: none; }
+.gb.slim .gb-title,
+.gb.slim .gb-dotmatrix { display: none; }
+
+/* Function labels printed on the shell above each control (like SELECT/START
+   on the DMG). Sourced from data-fn so the markup stays the single source. */
+.gb-ss-btn::before,
+.gb-ab-btn::before,
+.gb-semafor::before {
+  content: attr(data-label);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 3px;
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #8f9096;
+  opacity: 0.85;
+  pointer-events: none;
+}
+/* ACTION label a shade larger than the cluster labels */
+.gb-semafor::before {
+  font-size: 8px;
+}
+/* Printed captions ABOVE the F-keys: much larger print (Peđa) — the cluster
+   labels (MODE/MAX/MIN/ACTION) intentionally stay at their smaller size. */
+.gb-ss-btn::before {
+  font-size: 9.5px;
+  margin-bottom: 2px;
+}
+.gb.light .gb-ss-btn::before,
+.gb.light .gb-ab-btn::before,
+.gb.light .gb-mode-switch::before,
+.gb.light .gb-semafor::before,
+.gb.white-chassis .gb-ss-btn::before,
+.gb.white-chassis .gb-ab-btn::before,
+.gb.white-chassis .gb-mode-switch::before,
+.gb.white-chassis .gb-semafor::before,
+.gb.retro-chassis .gb-ss-btn::before,
+.gb.retro-chassis .gb-ab-btn::before,
+.gb.retro-chassis .gb-mode-switch::before,
+.gb.retro-chassis .gb-semafor::before {
+  color: #403b32 !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+/* Unlit semaphore dots wash out on light shells — keep them etched.
+   :where() keeps specificity at (0,1,1) so the lit-state rules (opacity 1
+   + glow, specificity (0,3,0)) still win. */
+:where(.gb.light) .gb-semafor i {
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.3);
+  opacity: 0.4;
+}
+/* Light/retro chassis: dark pill buttons need light labels to stay readable. */
+.gb.light .gb-bottom {
+  color: #3a3a3a;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.gb.retro-chassis .gb-ss-btn,
+.gb.eink-color .gb-ss-btn {
+  color: #f4efe4;
+  background: #333;
+  border: 1px solid rgba(0,0,0,0.7);
+  box-shadow: inset -1px -1px 3px rgba(0,0,0,0.6), inset 1px 1px 3px rgba(255,255,255,0.2), 0 2px 3px rgba(0,0,0,0.5);
+}
+.gb.retro-chassis .gb-ss-btn::after,
+.gb.eink-color .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.85);
+}
+/* Cream chassis: warm beige keys with molded dark labels (mockup) */
+.gb.light .gb-ss-btn {
+  color: #453f32;
+  background: linear-gradient(180deg, #e8e1d0, #d0c8b3);
+  border: 1px solid rgba(90, 80, 60, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -2px 3px rgba(120,105,80,0.35),
+    0 2px 2px rgba(0,0,0,0.25), 0 0 0 2px rgba(80,70,50,0.12);
+}
+.gb.light .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.9;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+}
+.gb.light .gb-ss-btn:active {
+  background: linear-gradient(180deg, #d0c8b3, #c2b9a2);
+  box-shadow: inset 0 2px 4px rgba(90,80,60,0.5), 0 1px 1px rgba(0,0,0,0.2), 0 0 0 2px rgba(80,70,50,0.12);
+}
+/* Speaker grille: five thin horizontal slits drawn in CSS (replaced the
+   speaker-grille.png photo), about as wide as the A/B button pair. Meant to
+   stay quiet on the shell — muted (the usual state) just dims the slits,
+   no color shift. Slit color per chassis follows the button-label colors. */
+.gb-speakers {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* spacing inside the right-hand cluster comes from its gap */
+  margin-left: 0;
+  margin-right: 0;
+}
+/* Round molded speaker: a dot-grid of holes clipped to a circle, with an
+   inset rim so it reads as drilled plastic like the A/B buttons. The one
+   next to A plays the built-in tune, the right one gates the SFX. */
+.gb-speaker {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #8f9096;
+  background-image: radial-gradient(currentColor 1px, transparent 1.4px);
+  background-size: 4.1px 4.1px;
+  background-position: center;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 -1px 1px rgba(255, 255, 255, 0.14);
+  opacity: 0.75;
+  transition: opacity 0.15s, color 0.15s, box-shadow 0.2s;
+}
+.gb-speaker:hover {
+  opacity: 1;
+}
+.gb-speaker.muted {
+  opacity: 0.32;
+}
+/* Music speaker breathes softly while the tune plays. */
+.gb-speaker.playing {
+  opacity: 1;
+  animation: spk-breathe 2.8s ease-in-out infinite;
+}
+@keyframes spk-breathe {
+  0%, 100% { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(255, 255, 255, 0); }
+  50% { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 5px 1px currentColor; }
+}
+/* On light/paper chassis the holes are dark */
+.gb.light .gb-speaker,
+.gb.white-chassis .gb-speaker,
+.gb.retro-chassis .gb-speaker,
+.gb.eink-color .gb-speaker {
+  color: #4a463c;
+}
+.gb.dark-chassis .gb-speaker {
+  color: #9a9ba1;
+}
+.gb.red-chassis .gb-speaker {
+  color: #ffd9d6;
+}
+
+/* Red (G-Shock) chassis: deep red shell — black rubber keys, light labels,
+   so the frame reads like a G-Shock case around the red-ink display. */
+.gb.red-chassis .gb-ss-btn::before,
+.gb.red-chassis .gb-ab-btn::before,
+.gb.red-chassis .gb-mode-switch::before,
+.gb.red-chassis .gb-semafor::before {
+  /* light prints in EVERY tone — the .gb.light walnut captions are
+     unreadable on the vivid tone-proof body */
+  color: #ffd9d6 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.gb.red-chassis .gb-ss-btn {
+  color: #f4e3e1;
+  background: linear-gradient(180deg, #35090d, #200507);
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 3px rgba(0, 0, 0, 0.55),
+    0 2px 3px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.red-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.red-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #200507, #170304);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.red-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #43444a, #2c2d33 60%, #191a1e);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.18),
+    0 2px 2px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+.gb.red-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #2c2d33, #202126 60%, #121316);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+
+/* Faded Red / Faded Orange chassis: the pale siblings — sun-bleached LIGHT
+   bodies, so prints flip DARK (like retro/white) and the keys go washed
+   dark-rubber in the same hue. Cluster labels (MODE/ACTION/MAX/MIN) are
+   included: the default grey print washes out on the pale plastic. */
+.gb.red-pale-chassis .gb-ss-btn::before,
+.gb.red-pale-chassis .gb-ab-btn::before,
+.gb.red-pale-chassis .gb-mode-switch::before,
+.gb.red-pale-chassis .gb-semafor::before {
+  color: #4a201c !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.gb.red-pale-chassis .gb-speaker { color: #4a201c; }
+.gb.red-pale-chassis .gb-ss-btn {
+  color: #f2ddd9;
+  background: linear-gradient(180deg, #5e2f2b, #47211e);
+  border: 1px solid rgba(58, 22, 19, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -2px 3px rgba(0, 0, 0, 0.4),
+    0 2px 3px rgba(74, 32, 28, 0.4), 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.gb.red-pale-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
+}
+.gb.red-pale-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #47211e, #3a1a17);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.gb.orange-pale-chassis .gb-ss-btn::before,
+.gb.orange-pale-chassis .gb-ab-btn::before,
+.gb.orange-pale-chassis .gb-mode-switch::before,
+.gb.orange-pale-chassis .gb-semafor::before {
+  color: #4c2e14 !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.gb.orange-pale-chassis .gb-speaker { color: #4c2e14; }
+.gb.orange-pale-chassis .gb-ss-btn {
+  color: #f4e4d0;
+  background: linear-gradient(180deg, #5e4126, #47301a);
+  border: 1px solid rgba(58, 38, 18, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -2px 3px rgba(0, 0, 0, 0.4),
+    0 2px 3px rgba(76, 46, 20, 0.4), 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.gb.orange-pale-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
+}
+.gb.orange-pale-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #47301a, #3a2614);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Phosphor Monitor / Cyberpunk Neon / Sapphire Ocean chassis: same treatment
+   as red-chassis above — dark tinted keys + accent-lit labels + tinted grille,
+   so the frame reads as one piece with its screen preset instead of falling
+   back to the neutral charcoal default. */
+.gb.phosphor-chassis .gb-ss-btn::before,
+.gb.phosphor-chassis .gb-ab-btn::before {
+  color: #c8f0b8 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.gb.phosphor-chassis .gb-ss-btn {
+  color: #d9f0cf;
+  background: linear-gradient(180deg, #16321a, #0d1f10);
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 3px rgba(0, 0, 0, 0.55),
+    0 2px 3px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.phosphor-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.phosphor-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #0d1f10, #08150b);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.phosphor-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #43444a, #2c2d33 60%, #191a1e);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.18),
+    0 2px 2px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+.gb.phosphor-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #2c2d33, #202126 60%, #121316);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+.gb.phosphor-chassis .gb-grille {
+  color: #86e568;
+}
+
+.gb.cyberpunk-chassis .gb-ss-btn::before,
+.gb.cyberpunk-chassis .gb-ab-btn::before {
+  color: #f5c8ea !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.gb.cyberpunk-chassis .gb-ss-btn {
+  color: #f2d9ec;
+  background: linear-gradient(180deg, #2a1330, #1a0a1f);
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 3px rgba(0, 0, 0, 0.55),
+    0 2px 3px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.cyberpunk-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.cyberpunk-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #1a0a1f, #120714);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.cyberpunk-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #43444a, #2c2d33 60%, #191a1e);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.18),
+    0 2px 2px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+.gb.cyberpunk-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #2c2d33, #202126 60%, #121316);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+.gb.cyberpunk-chassis .gb-grille {
+  color: #e4d6f8;
+}
+
+.gb.ocean-chassis .gb-ss-btn::before,
+.gb.ocean-chassis .gb-ab-btn::before {
+  color: #c8eef5 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+.gb.ocean-chassis .gb-ss-btn {
+  color: #d9eef2;
+  background: linear-gradient(180deg, #122530, #081820);
+  border: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 3px rgba(0, 0, 0, 0.55),
+    0 2px 3px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.ocean-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.ocean-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #081820, #051016);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+.gb.ocean-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #43444a, #2c2d33 60%, #191a1e);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.55), inset 0 2px 3px rgba(255, 255, 255, 0.18),
+    0 2px 2px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+.gb.ocean-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #2c2d33, #202126 60%, #121316);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7), 0 1px 1px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(0, 0, 0, 0.28);
+}
+.gb.ocean-chassis .gb-grille {
+  color: #c2e3f5;
+}
+
+/* Mecha chassis styling */
+.gb.mecha-chassis .gb-ss-btn::before,
+.gb.mecha-chassis .gb-ab-btn::before {
+  color: #c0c0c0 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+.gb.mecha-chassis .gb-ss-btn {
+  color: #cccccc;
+  background: linear-gradient(180deg, #444, #2c2c2c);
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), inset 0 -2px 3px rgba(0, 0, 0, 0.6),
+    0 2px 3px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.mecha-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.mecha-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #2c2c2c, #1a1a1a);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.mecha-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #555, #3c3c3c 60%, #222);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.6), inset 0 2px 3px rgba(255, 255, 255, 0.2),
+    0 2px 2px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+.gb.mecha-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #3c3c3c, #2a2a2a 60%, #151515);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+.gb.mecha-chassis .gb-grille {
+  color: #b5b5b5;
+}
+
+/* Orange (Atomic Orange) chassis styling */
+.gb.orange-chassis .gb-ss-btn::before,
+.gb.orange-chassis .gb-ab-btn::before,
+.gb.orange-chassis .gb-mode-switch::before,
+.gb.orange-chassis .gb-semafor::before {
+  /* light prints in EVERY tone — see the red-chassis note above */
+  color: #ffcc99 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+.gb.orange-chassis .gb-ss-btn {
+  color: #ffebcc;
+  background: linear-gradient(180deg, #2b2b2b, #1a1a1a);
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 3px rgba(0, 0, 0, 0.6),
+    0 2px 3px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.orange-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.orange-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #1a1a1a, #0d0d0d);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.orange-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #3c3c3c, #222 60%, #0d0d0d);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.6), inset 0 2px 3px rgba(255, 255, 255, 0.12),
+    0 2px 2px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.orange-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #222, #141414 60%, #050505);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.orange-chassis .gb-grille {
+  color: #ffaa55;
+}
+
+/* Grape GBC chassis styling */
+.gb.grape-chassis .gb-ss-btn::before,
+.gb.grape-chassis .gb-ab-btn::before {
+  color: #e1fcf9 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+.gb.grape-chassis .gb-ss-btn {
+  color: #e1fcf9;
+  background: linear-gradient(180deg, #2b2b2b, #1a1a1a);
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -2px 3px rgba(0, 0, 0, 0.6),
+    0 2px 3px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.grape-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.grape-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #1a1a1a, #0d0d0d);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.grape-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #3c3c3c, #222 60%, #0d0d0d);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.6), inset 0 2px 3px rgba(255, 255, 255, 0.12),
+    0 2px 2px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.grape-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #222, #141414 60%, #050505);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8), 0 1px 1px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(0, 0, 0, 0.3);
+}
+.gb.grape-chassis .gb-grille {
+  color: #8c3bb0;
+}
+
+/* Woodgrain chassis styling */
+.gb.wood-chassis .gb-ss-btn::before,
+.gb.wood-chassis .gb-ab-btn::before {
+  color: #ffe6cc !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+.gb.wood-chassis .gb-ss-btn {
+  color: #3c200d;
+  background: linear-gradient(180deg, #d4af37, #b28d22);
+  border: 1px solid #7c5c16;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -2px 3px rgba(0, 0, 0, 0.4),
+    0 2px 3px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(0, 0, 0, 0.15);
+}
+.gb.wood-chassis .gb-ss-btn::after {
+  color: currentColor;
+  opacity: 0.95;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.gb.wood-chassis .gb-ss-btn:active {
+  background: linear-gradient(180deg, #b28d22, #8f6c15);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 1px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(0, 0, 0, 0.15);
+}
+.gb.wood-chassis .gb-ab-btn {
+  background: radial-gradient(circle at 32% 28%, #e5c158, #cda230 60%, #997315);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.4), inset 0 2px 3px rgba(255, 255, 255, 0.25),
+    0 2px 2px rgba(0, 0, 0, 0.35), 0 0 0 2px rgba(0, 0, 0, 0.15);
+}
+.gb.wood-chassis .gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #cda230, #997315 60%, #73540d);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5), 0 1px 1px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(0, 0, 0, 0.15);
+}
+.gb.wood-chassis .gb-grille {
+  color: #3c200d;
+}
+
+
+
+/* ---- right-click menu ---------------------------------------------------- */
+.gb-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 150px;
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+.gb-menu-item {
+  padding: 7px 12px;
+  border-radius: 5px;
+  color: var(--menu-fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+.gb-menu-item:hover {
+  background: var(--menu-hover-bg);
+  color: var(--menu-hover-fg);
+}
+.gb-menu-item.disabled {
+  color: var(--menu-disabled);
+  cursor: default;
+}
+.gb-menu-item.disabled:hover {
+  background: transparent;
+  color: var(--menu-disabled);
+}
+.gb-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--menu-border);
+}
+
+/* ---- in-terminal search overlay ----------------------------------------- */
+.gb-search {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--search-bg);
+  border: 1px solid var(--search-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+}
+.gb-search[hidden] {
+  display: none;
+}
+.gb-search-input {
+  width: 160px;
+  border: none;
+  outline: none;
+  background: var(--search-input-bg);
+  color: var(--search-fg);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 5px;
+}
+.gb-search button {
+  border: none;
+  background: var(--search-button-bg);
+  color: var(--search-button-fg);
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.gb-search button:hover {
+  filter: brightness(1.12);
+}
+
+/* ---- chassis button interactive overlays -------------------------------- */
+.gb-dpad-btn {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 8px;
+  color: transparent;
+  border-radius: 50%;
+  z-index: 5;
+}
+.gb-dpad-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.gb-dpad-btn.up    { top: 1px;   left: 50%; transform: translateX(-50%); }
+.gb-dpad-btn.down  { bottom: 1px; left: 50%; transform: translateX(-50%); }
+.gb-dpad-btn.left  { left: 1px;  top: 50%;  transform: translateY(-50%); }
+.gb-dpad-btn.right { right: 1px; top: 50%;  transform: translateY(-50%); }
+
+.gb-ab-wrap {
+  position: relative;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  /* spacing inside the right-hand cluster comes from its gap */
+  margin-left: 0;
+}
+.gb-ab-btn {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(0,0,0,0.65);
+  padding: 0;
+  margin: 0;
+  /* DMG red action buttons matching top X */
+  background: radial-gradient(circle at 32% 28%, #cf6359, #b5524a 60%, #913d36);
+  color: #fff;
+  cursor: pointer;
+  font-size: 9.1px;
+  font-weight: bold;
+  font-family: sans-serif;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+  box-shadow: inset 0 -2px 4px rgba(0,0,0,0.45), inset 0 2px 3px rgba(255,255,255,0.25),
+    0 2px 2px rgba(0,0,0,0.35), 0 0 0 2px rgba(0,0,0,0.16);
+}
+.gb.light .gb-ab-btn {
+  box-shadow: inset 0 -2px 4px rgba(0,0,0,0.45), inset 0 2px 3px rgba(255,255,255,0.25),
+    0 2px 2px rgba(0,0,0,0.35), 0 0 0 2px rgba(80,70,50,0.18);
+}
+.gb-ab-btn:active {
+  background: radial-gradient(circle at 32% 28%, #9c453d, #823730 60%, #632620);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.6), 0 1px 1px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.16);
+  transform: translateY(1px);
+}
+
+/* Start/Select overlay buttons */
+.gb-ss-wrap {
+  position: relative;
+  display: inline-flex;
+  gap: 3px;
+}
+/* F7 tall-toggle: same key family; lit when terminal is small (can expand) */
+.gb-ss-btn.tall-toggle {
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.gb-ss-btn.tall-toggle.active {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -2px 3px rgba(0,0,0,0.4),
+    0 2px 2px rgba(0,0,0,0.5), 0 0 0 2px rgba(0,0,0,0.14), 0 0 5px rgba(255,255,255,0.1);
+}
+.gb-ss-btn.tall-toggle.active::after {
+  opacity: 1;
+}
+.gb-ss-btn.active {
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -2px 3px rgba(0,0,0,0.45),
+    0 2px 2px rgba(0,0,0,0.5), 0 0 0 2px rgba(0,0,0,0.14), 0 0 7px rgba(255,255,255,0.18);
+}
+.gb-ss-btn {
+  position: relative;
+  width: 32px;
+  height: 16px;
+  border: 1px solid rgba(0,0,0,0.75);
+  padding: 0;
+  margin: 0;
+  /* molded charcoal function key, sunk into the shell */
+  background: linear-gradient(180deg, #3a3b40, #26272b);
+  color: #cfd0d4;
+  cursor: pointer;
+  font-size: 0;
+  border-radius: 5px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -2px 3px rgba(0,0,0,0.5),
+    0 2px 2px rgba(0,0,0,0.5), 0 0 0 2px rgba(0,0,0,0.14);
+}
+/* Hover feedback for the molded keys (F-row, A/B, MODE): a filter nudge, not a
+   repaint, so it survives every chassis tint (light/retro/eink/mecha/…) without
+   per-chassis overrides. :active dips the other way = tactile press. */
+.gb-ss-btn:hover,
+.gb-ab-btn:hover,
+.gb-mode-switch:hover {
+  filter: brightness(1.18);
+}
+.gb-ss-btn:active,
+.gb-ab-btn:active {
+  filter: brightness(0.88);
+}
+/* LOOK: one wide key ~= two standard pills + their gap, opens the appearance
+   menu. Same molded pill style AND label convention as the F-keys — F1 printed
+   on the face, LOOK printed above — just wider. */
+.gb-look-btn {
+  width: 68px;
+}
+
+/* ── LOOK overlay: appearance menu over the screen (theme/tone/CRT/wear) ── */
+.gb-look {
+  position: absolute;
+  /* Bottom-anchored, height = its own content (NOT a fixed fraction), so it is
+     exactly as tall as the six rows need and NEVER scrolls. It hugs the bottom;
+     whatever is left above stays a live terminal for previewing changes.
+     max-height only bites in a pathologically short window. */
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 140;
+  background: rgba(8, 10, 13, 0.95);
+  border: 1px solid rgba(228, 182, 87, 0.4);
+  border-radius: 4px;
+  padding: 12px 14px;
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  color: #e7e9ee;
+  display: flex;
+  flex-direction: column;
+  /* Card centered horizontally; height follows the content so there is NO
+     scrollbar, ever — the panel is exactly as tall as its six rows. */
+  align-items: center;
+  gap: 7px;
+  box-shadow: 0 -8px 26px rgba(0, 0, 0, 0.5);
+}
+.gb-look[hidden] { display: none; }
+/* The head/rows/foot form one centered fixed-width card. Sized ~10% smaller
+   than the first pass so the whole card fits inside the lower half. */
+.gb-look-head, .gb-look-row, .gb-look-foot { width: min(346px, 100%); }
+.gb-look-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #e4b657;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding-bottom: 7px;
+}
+.gb-look-badge { color: #6f727b; font-size: 8px; letter-spacing: 0.1em; }
+.gb-look-row { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 10px; }
+.gb-look-row.active .gb-look-key { color: #e4b657; }
+.gb-look-key { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #8f9096; }
+.gb-look-val { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.gb-look-arrow { all: unset; cursor: pointer; color: #8f9096; padding: 0 4px; font-size: 13px; line-height: 1; }
+.gb-look-arrow:hover { color: #fff; }
+.gb-look-name { min-width: 118px; }
+.gb-look-count { color: #6f727b; font-size: 9px; }
+.gb-look-seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.gb-look-seg button {
+  all: unset; cursor: pointer;
+  font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 3px;
+  color: #8f9096; border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.gb-look-seg button:hover { color: #fff; border-color: rgba(255, 255, 255, 0.3); }
+.gb-look-seg button[aria-pressed="true"] { color: #12140f; background: #e4b657; border-color: #e4b657; font-weight: 700; }
+.gb-look-meter { display: inline-flex; align-items: center; gap: 5px; }
+.gb-look-meter button { all: unset; cursor: pointer; color: #8f9096; font-size: 14px; padding: 0 3px; }
+.gb-look-meter button:hover { color: #fff; }
+.gb-look-bars { display: inline-flex; gap: 1.5px; }
+.gb-look-bars i { width: 3px; height: 12px; border-radius: 1px; background: rgba(255, 255, 255, 0.16); }
+.gb-look-bars i.on { background: #e4b657; }
+.gb-look-foot {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 9px; color: #6f727b;
+  border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 5px;
+}
+
+/* ── Layout: compact (LOOK) vs full (12 keys). All 12 keys live in one flat
+   .gb-ss-keys row. In compact only the LOOK button + window keys (win-key)
+   show; the appearance keys (appear-key, F1–F7) are hidden. Full mode reveals
+   all 12 in ONE row split into three equal groups of four — F1–F4, F5–F8,
+   F9–F12 — with a pause (group-start margin) before F5 and F9. Keys shrink so
+   the row fits beside the ACTION/A-B/MODE cluster and the toolbar grows taller. ── */
+.gb-ss-groups { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 16px; margin-left: 8px; }
+/* Right-hand control cluster: ACTION, B/A, speaker — one group anchored to
+   the bottom-right corner so every layout (compact / full-12 / roboterminal)
+   shows the same order at the same spot. (The MODE switch markup also lives
+   here but is absolutely positioned onto the right shell edge.)
+   margin-left:auto (not a fixed key-row width) keeps narrow windows shrinking
+   the key side instead of clipping the cluster. */
+.gb-controls-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.gb-bottom.layout-full { gap: 6px; }
+/* Full mode: the 12-key group starts flush with the SCREEN's left edge (the
+   imaginary extension of the terminal border, .gb-middle's 4px padding) —
+   almost one full pill left of the base 24px console padding (Peđa). The
+   robo console overrides this back to 24px (cluster alignment on the
+   ribbed shell). */
+.gb-bottom.layout-full { padding-left: 4px; }
+.gb-bottom.layout-full .gb-ss-groups { margin-left: 0; }
+/* Compact: only 6 pills show, so give them air — the 9.5px printed captions
+   (BOTTOM, EXPAND…) are wider than the 32px keys and overlap at the tight
+   full-mode pitch. Full mode keeps its packed 2px gap (needs to fit 12). */
+.gb-bottom:not(.layout-full) .gb-ss-wrap { gap: 14px; }
+/* Captions fit WITHIN the 32px pill in BOTH modes: compact steps down to
+   8.5px (full packs tighter still, 8px, below), and words wider than the
+   pill render their abbreviated data-label-c variant everywhere
+   (BOTTOM→BOTT., EXPAND→EXP.). */
+.gb-bottom:not(.layout-full) .gb-ss-btn::before { font-size: 8.5px; letter-spacing: 0.06em; }
+.gb-ss-btn[data-label-c]::before { content: attr(data-label-c); }
+/* Full-mode keys keep the base compact size (.gb-ss-btn width: 32px) — the row
+   flexes to fill the space up to the ACTION semafor, spreading the three groups
+   toward it. Labels keep the normal 6px shell font. */
+.gb-bottom.layout-full .gb-ss-keys { flex: 1; justify-content: flex-start; }
+.gb-bottom.layout-full .gb-ss-wrap { gap: 2px; }
+/* Full mode packs 12 captions in one row: step the caption font down a notch
+   from the 9.5px base and drop letter-spacing so adjacent long words like
+   BOTTOM · EXPAND don't touch. */
+.gb-bottom.layout-full .gb-ss-btn::before { letter-spacing: 0; font-size: 8px; }
+/* Three equal groups of four: a small pause before the first key of group 2
+   (F5) and group 3 (F9) — kept tight so the 12 compact-size keys fit. */
+.gb-bottom.layout-full .group-start { margin-left: 6px; }
+.appear-key { display: none; }
+.gb-bottom.layout-full .appear-key { display: inline-block; }
+.gb-bottom.layout-full .gb-look-btn { display: none; }
+
+/* MODE: big round machined push-button at the head of the right cluster —
+   a knurled gunmetal ring around a raised polished dome, like the mode dial
+   cap on a field radio. ONE fixed look in every layout and on every chassis:
+   it is the machine's "system" control, not part of the shell's costume.
+   Nothing on it lights up — the only lamp on the shell is the ACTION status
+   semafor next to it (Peđa). In-flow in .gb-controls-cluster, so it sits at
+   the same spot in every mode.
+   Layers (top → bottom): dome sheen → dome seam ring → dome → knurled ring. */
+.gb-mode-switch {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  margin: 0; padding: 0;
+  border: 1px solid #101114;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.16), transparent 44%),
+    radial-gradient(circle at 50% 50%, transparent 0 38%, rgba(0, 0, 0, 0.55) 41% 45%, transparent 48%),
+    radial-gradient(circle at 50% 50%, #41444b 0 30%, #2a2c31 42%, transparent 43%),
+    repeating-conic-gradient(from 0deg, #33363d 0deg 9deg, #1d1f24 9deg 18deg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.5),
+    0 2px 3px rgba(0, 0, 0, 0.45),
+    0 0 0 2px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+}
+/* Pressed: the cap visibly SINKS — drops 1px, loses its lift shadow, gains a
+   deep inset well (same tactile language as the A/B buttons). Hover uses the
+   shared brightness nudge (see the .gb-ss-btn:hover group above). */
+.gb-mode-switch:active {
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.05), transparent 44%),
+    radial-gradient(circle at 50% 50%, transparent 0 38%, rgba(0, 0, 0, 0.6) 41% 45%, transparent 48%),
+    radial-gradient(circle at 50% 50%, #2b2d32 0 30%, #1e2024 42%, transparent 43%),
+    repeating-conic-gradient(from 0deg, #26282e 0deg 9deg, #16181c 9deg 18deg);
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.8),
+    0 1px 1px rgba(0, 0, 0, 0.3),
+    0 0 0 2px rgba(0, 0, 0, 0.16);
+  transform: translateY(1px);
+}
+/* Active pane's working directory, printed inside the SCREEN's top-right
+   corner (all layouts — it lives on the glass, not the chassis). Theme ink
+   straight on the screen background — no backing plate; a whisper-thin
+   term-bg glow keeps the glyph edges readable over scrolling text. */
+.gb-screen-path {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl; /* long paths clip on the LEFT — the deepest dir stays visible */
+  unicode-bidi: plaintext;
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--term-fg, #8f9096);
+  opacity: 0.65;
+  text-shadow: 0 0 2px var(--term-bg, #000);
+  padding: 1px 5px 2px;
+  pointer-events: none;
+  z-index: 6;
+}
+/* Wear grime/fracture overlay: its own paint layer above the chassis
+   background (whichever shell owns it — molded plastic, robo/fable CSS art,
+   cassette photo) and below every control, so the WEAR axis composes with
+   any MODE/FRAME/TONE instead of overwriting the shell's background. */
+.gb-wear {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+}
+/* Printed MODE caption above the cap, like the rest of the cluster labels. */
+.gb-mode-switch::before {
+  content: attr(data-label);
+  position: absolute; bottom: 100%; left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 3px;
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  font-size: 7px; font-weight: 700; letter-spacing: 0.12em;
+  color: #8f9096; opacity: 0.85; white-space: nowrap; pointer-events: none;
+}
+.gb-ss-btn::after {
+  content: attr(aria-label);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.8;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.6);
+  pointer-events: none;
+}
+.gb-ss-btn:active {
+  background: linear-gradient(180deg, #232428, #1a1b1e);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.8), 0 1px 1px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.14);
+  transform: translateY(1px);
+}
+
+/* Toast Notification for Theme Presets */
+.gb-toast {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--menu-bg, #1a1c1e);
+  border: 2px solid var(--menu-border, #2c2e30);
+  border-radius: 4px;
+  padding: 8px 16px;
+  color: var(--menu-fg, #ebdca5);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+  z-index: 60;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  text-align: center;
+}
+.gb-toast.show {
+  opacity: 0.95;
+}
+
+/* ---- RPG-style Pop-up dialog for permissions ---- */
+/* Anti-spoofing: the approval dialog is a direct child of .gb (the chassis),
+   centred over the whole unit, not inside .gb-screen. A program writing escape
+   sequences can only paint the screen, so it can never reproduce a dialog that
+   sits on the plastic — the badge and the overhang onto the bezel/toolbar are
+   the tell. z-index sits above the buttons and speakers. */
+.gb-dialog,
+.gb-confirm {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  width: min(440px, calc(100% - 40px));
+  z-index: 200;
+  background: var(--menu-bg, #eef4d8);
+  border: 3px double var(--menu-border, #9eac78);
+  border-radius: 6px;
+  padding: 10px 14px 12px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(0, 0, 0, 0.25);
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+/* The QUIT confirm pops next to the X that summoned it (top-right), not at
+   the bottom like approvals. Anti-spoofing note: top:20px makes it OVERHANG
+   the chassis top bar — a PTY program can only paint the glass, so the
+   overhang onto the plastic stays the tell (same principle as approvals,
+   which keep the bottom-center chassis spot). */
+.gb-confirm {
+  left: auto;
+  right: 12px;
+  bottom: auto;
+  top: 20px;
+  transform: none;
+  width: min(360px, calc(100% - 40px));
+}
+.gb-dialog-box {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.gb-dialog-badge {
+  align-self: flex-start;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: var(--search-button-fg, #f8ffe7);
+  background: var(--search-button-bg, #4d6334);
+  border: 1px solid var(--menu-border, #9eac78);
+  border-radius: 3px;
+  padding: 2px 7px;
+}
+.gb-dialog-text {
+  font-size: 11px;
+  color: var(--menu-fg, #1c2616);
+  line-height: 1.35;
+  word-break: break-all;
+}
+.gb-dialog-origin {
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--menu-fg, #1c2616);
+  opacity: 0.75;
+  white-space: pre-line;
+  word-break: break-all;
+  border-top: 1px solid var(--menu-border, #9eac78);
+  padding-top: 5px;
+}
+.gb-dialog-options {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.gb-dialog-btn {
+  background: var(--search-button-bg, #4d6334);
+  color: var(--search-button-fg, #f8ffe7);
+  border: 1px solid var(--menu-border, #9eac78);
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: filter 0.1s, transform 0.1s;
+}
+.gb-dialog-btn:hover {
+  filter: brightness(1.15);
+}
+.gb-dialog-btn:active {
+  transform: translateY(1px);
+}
+.gb-dialog-btn:focus {
+  border-color: var(--search-button-fg, #f8ffe7);
+  box-shadow: 0 0 0 1px var(--menu-border, #9eac78);
+}
+
+.gb-scroll-track {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 15px;
+  z-index: 100;
+  background: transparent;
+  cursor: ns-resize;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: saturate(0.8) brightness(0.9) contrast(1.05);
+}
+
+/* Diff Inspector */
+.gb-diff {
+  position: absolute;
+  top: 10%;
+  left: 10%;
+  width: 80%;
+  height: 80%;
+  background: var(--term-bg);
+  border: 4px solid var(--term-fg);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 10px 10px 0px rgba(0, 0, 0, 0.5);
+  padding: 10px;
+}
+
+/* Help / landing overlay: a full-screen scrim over the pane area with a
+   card built from help-content.ts. Uses the active theme's own colours so it
+   reads as part of whatever preset is on screen. */
+.gb-help {
+  position: absolute;
+  inset: 0;
+  z-index: 150; /* above the pane scroll track (100) */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: color-mix(in srgb, var(--term-bg) 62%, transparent);
+  font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+}
+.gb-help[hidden] { display: none; }
+.gb-help-header,
+.gb-help-body,
+.gb-help-footer {
+  width: min(560px, 100%);
+}
+.gb-help-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--term-bg);
+  border: 2px solid var(--term-fg);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 8px 12px;
+}
+.gb-help-title {
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  color: var(--term-fg);
+  font-size: 14px;
+}
+.gb-help-cmd {
+  flex: 1;
+  color: var(--term-fg);
+  opacity: 0.6;
+  font-size: 10px;
+}
+.gb-help-close {
+  background: transparent;
+  border: 1px solid var(--term-fg);
+  color: var(--term-fg);
+  border-radius: 3px;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+}
+.gb-help-close:hover { filter: brightness(1.3); }
+.gb-help-body {
+  background: var(--term-bg);
+  border: 2px solid var(--term-fg);
+  border-top: none;
+  border-bottom: none;
+  padding: 6px 14px 12px;
+  max-height: 62vh;
+  overflow-y: auto;
+  color: var(--term-fg);
+}
+.gb-help-tagline {
+  font-size: 11px;
+  opacity: 0.8;
+  margin: 8px 0 4px;
+  line-height: 1.4;
+}
+.gb-help-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.7;
+  margin: 14px 0 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--term-fg) 35%, transparent);
+  padding-bottom: 3px;
+}
+.gb-help-row {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 3px 0;
+}
+.gb-help-key {
+  flex: 0 0 108px;
+  color: var(--term-fg);
+  font-weight: bold;
+  word-break: break-word;
+}
+.gb-help-text { flex: 1; opacity: 0.92; }
+.gb-help-text b { font-weight: bold; }
+.gb-help-footer {
+  background: var(--term-bg);
+  border: 2px solid var(--term-fg);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 8px 14px 10px;
+  font-size: 10px;
+}
+.gb-help-footer a {
+  color: var(--term-fg);
+  opacity: 0.8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.gb-subtitle[role="button"] { cursor: pointer; }
+.gb-subtitle[role="button"]:hover { opacity: 0.8; }
+
+/* Activity overlay: reuses .gb-help chrome; these style its rows. */
+.gb-activity-line {
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 1px 0;
+  color: var(--term-fg);
+  opacity: 0.9;
+  word-break: break-word;
+}
+.gb-activity-approval { opacity: 1; }
+.gb-activity-checkpoint { opacity: 0.85; }
+.gb-activity-restore { opacity: 0.85; }
+.gb-activity-cp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  padding: 4px 0;
+  color: var(--term-fg);
+}
+.gb-activity-cp-label { flex: 1; opacity: 0.9; }
+.gb-activity-restore {
+  background: transparent;
+  border: 1px solid var(--term-fg);
+  color: var(--term-fg);
+  border-radius: 3px;
+  padding: 2px 9px;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gb-activity-restore:hover { filter: brightness(1.3); }
+.gb-activity-restore.armed {
+  background: var(--term-fg);
+  color: var(--term-bg);
+  font-weight: bold;
+}
+
+.gb-diff[hidden] {
+  display: none !important;
+}
+
+.gb-diff-header {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--term-fg);
+  padding-bottom: 5px;
+  font-family: inherit;
+  color: var(--term-fg);
+  font-weight: bold;
+}
+
+.gb-diff-close {
+  background: transparent;
+  border: none;
+  color: var(--term-fg);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.gb-diff-content {
+  flex: 1;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--term-fg);
+  margin: 10px 0;
+  white-space: pre-wrap;
+}
+
+.gb-diff-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.gb-diff-refresh {
+  background: transparent;
+  border: 2px solid var(--term-fg);
+  color: var(--term-fg);
+  padding: 4px 8px;
+  font-family: inherit;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.gb-diff-refresh:hover {
+  background: var(--term-fg);
+  color: var(--term-bg);
+}
+
+/* Final contrast guard for F1-F7 key labels on dark-key chassis variants.
+   (.gb.light uses beige keys with dark labels — see the .gb.light .gb-ss-btn rules.) */
+.gb.retro-chassis .gb-ss-btn,
+.gb.eink-color .gb-ss-btn {
+  color: #fff7e6 !important;
+}
+
+.gb.retro-chassis .gb-ss-btn::after,
+.gb.eink-color .gb-ss-btn::after {
+  color: #fff7e6 !important;
+  opacity: 1 !important;
+  font-weight: 800;
+  text-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.95),
+    0 0 2px rgba(0, 0, 0, 0.75);
+}
+
+
+/* F11 NOFRAME: bare fullscreen terminal, chassis hidden until F11 restores it */
+.gb.noframe {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+.gb.noframe .gb-top,
+.gb.noframe .gb-bottom {
+  display: none;
+}
+.gb.noframe .gb-middle {
+  padding: 0;
+}
+.gb.noframe .gb-screen {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* F12 SAVER: cmatrix screensaver overlay covering the whole screen area */
+.gb-saver-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  background: #000;
+  overflow: hidden;
+}
+.gb-saver-overlay .xterm {
+  height: 100%;
+}
+/* Selection = an opaque-enough "highlighter" veil ABOVE the text, so it is
+   never dimmed by the CRT/vignette overlays that multiply over the terminal
+   (those darkened xterm's own light selection band into an unreadable muddy
+   grey). The veil provides the visible band; the glyphs beneath are set to the
+   theme BACKGROUND colour in TS (selectionForeground), so the result is crisp
+   dark text on a light band — a classic, obviously-"selected" highlight. Dark
+   themes get a strong white veil; light/paper themes a dark one. z-index keeps
+   it above the CRT planes. */
+.gb-term .xterm .xterm-selection {
+  z-index: 100 !important;
+}
+.xterm .xterm-selection div {
+  background: var(--sel-veil, rgba(236, 240, 228, 0.62)) !important;
+}
+.gb.light .gb-pane {
+  --sel-veil: rgba(20, 20, 20, 0.34);
+}
+
+/* The saver is a screensaver, not a terminal: never show its scrollbar. */
+.gb-saver-overlay .xterm-viewport {
+  scrollbar-width: none;
+}
+.gb-saver-overlay .xterm-viewport::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
+
+
+
+/* ---- Layouts 3+4: the Robo-Terminal family --------------------------------
+   Two rugged field-unit shells sharing ONE color system:
+   - layout-roboterminal — smooth brushed gunmetal body with machined vent
+     ribs on the side rails only (Peđa 2026-07-11: rib wallpaper retired),
+     keys carved into it as dark wells.
+   - layout-robogrip    — the earlier Mk.III: brushed gunmetal body with the
+     ribbed rubber only on the side GRIP pads and milled steel keys; the old
+     header/console plates are gone (the body shows through) per Peđa.
+   Every hue lives in the --robo-* variables below; the FRAME/LOOK chassis
+   pick (*-chassis classes) re-liveries BOTH robo shells — geometry stays,
+   only the paint changes. JS skips its inline chassis painting while a robo
+   layout is active (terminal-main.ts) so these rules own the shell.
+   The MODE→speaker cluster is deliberately NOT restyled: it must read
+   identical across all layouts. */
+.gb.layout-roboterminal,
+.gb.layout-robogrip {
+  /* default livery: gunmetal + amber stencil */
+  --robo-accent: #e5a93b;  /* backlit legends, stripes, screen spill */
+  --robo-ink: #edeae0;     /* stencil wordmark */
+  --robo-legend: #8a8f99;  /* printed captions above the keys */
+  --robo-t1: #24262c;      /* body tone: highlight */
+  --robo-t2: #15161a;      /* body tone: darkest */
+  --robo-t3: #1e2026;      /* body tone: mid */
+  --robo-border: #4a4d55;
+  --robo-steel: #33363d;   /* screen bezel ring */
+  /* legacy alias (kept so nothing downstream breaks) */
+  --robo-amber: var(--robo-accent);
+  --term-bg: #14161a;
+  --term-pane-bg: #0a0b0e;
+  border: 3px solid var(--robo-border);
+  border-radius: 22px 22px 32px 32px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -5px 14px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+/* FRAME liveries: the F2/LOOK chassis choice recolors the robo shells. The
+   dark liveries below keep light legends/ink; the TONE Light/Sepia beige
+   family (further down, ordered after these so it wins at equal specificity)
+   flips the whole system to worn light plastic with dark prints. */
+/* Vivid red: the body IS G-Shock red (terminal-ink hue), not near-black
+   with red accents — Peđa 2026-07-11: "tamna crvena šasija mora biti crvena". */
+.gb.red-chassis.layout-roboterminal, .gb.red-chassis.layout-robogrip, .gb.red-chassis.layout-fable {
+  --robo-accent: #ffd3cd; --robo-ink: #ffe4de; --robo-legend: #ffc7c0;
+  --robo-t1: #c1141f; --robo-t2: #6e0a11; --robo-t3: #99101a;
+  --robo-border: #58080d; --robo-steel: #7c0a12;
+}
+/* Faded siblings: same hue families desaturated — dusty rose / dusty
+   terracotta gunmetal (the "bleđa" pair to the vivid red/orange). */
+.gb.red-pale-chassis.layout-roboterminal, .gb.red-pale-chassis.layout-robogrip, .gb.red-pale-chassis.layout-fable {
+  --robo-accent: #e0968c; --robo-ink: #f2e2df;
+  --robo-t1: #3e2b28; --robo-t2: #20130f; --robo-t3: #2f1f1c;
+  --robo-border: #6b4a44; --robo-steel: #4a3430;
+}
+.gb.orange-pale-chassis.layout-roboterminal, .gb.orange-pale-chassis.layout-robogrip, .gb.orange-pale-chassis.layout-fable {
+  --robo-accent: #e6b088; --robo-ink: #f6ead9;
+  --robo-t1: #40301f; --robo-t2: #211609; --robo-t3: #302416;
+  --robo-border: #6b5238; --robo-steel: #4a3a26;
+}
+.gb.phosphor-chassis.layout-roboterminal, .gb.phosphor-chassis.layout-robogrip, .gb.phosphor-chassis.layout-fable {
+  --robo-accent: #7cff6b; --robo-ink: #e2ffd9;
+  --robo-t1: #17250f; --robo-t2: #0a1207; --robo-t3: #111c0b;
+  --robo-border: #2f4a26; --robo-steel: #23361c;
+}
+/* Cyberpunk robo livery = Peđin referentni screenshot (Desktop/primer,
+   2026-07-10): dark TEAL shell, neon MINT key legends, MAGENTA printed
+   captions — teal/magenta cyberpunk, not the violet of the base chassis. */
+.gb.cyberpunk-chassis.layout-roboterminal, .gb.cyberpunk-chassis.layout-robogrip, .gb.cyberpunk-chassis.layout-fable {
+  --robo-accent: #5fe8c4; --robo-ink: #d9f4ea; --robo-legend: #b54c96;
+  --robo-t1: #212b29; --robo-t2: #121817; --robo-t3: #1a2220;
+  --robo-border: #3a4a47; --robo-steel: #2c3a37;
+}
+.gb.ocean-chassis.layout-roboterminal, .gb.ocean-chassis.layout-robogrip, .gb.ocean-chassis.layout-fable {
+  --robo-accent: #55c8ff; --robo-ink: #dcf1ff;
+  --robo-t1: #14222e; --robo-t2: #090f16; --robo-t3: #0e1a24;
+  --robo-border: #2b4a5e; --robo-steel: #1f3646;
+}
+.gb.mecha-chassis.layout-roboterminal, .gb.mecha-chassis.layout-robogrip, .gb.mecha-chassis.layout-fable {
+  --robo-accent: #aac6e8; --robo-ink: #e8eef6;
+  --robo-t1: #2b3037; --robo-t2: #171a1f; --robo-t3: #22262c;
+  --robo-border: #55606c; --robo-steel: #3c4550;
+}
+/* Vivid atomic orange: saturated orange body, same "livery = the color
+   itself" rule as vivid red above. */
+.gb.orange-chassis.layout-roboterminal, .gb.orange-chassis.layout-robogrip, .gb.orange-chassis.layout-fable {
+  --robo-accent: #ffe0b8; --robo-ink: #fff0dc; --robo-legend: #ffd9ae;
+  --robo-t1: #e06010; --robo-t2: #8a3a05; --robo-t3: #b84c0a;
+  --robo-border: #6e2e04; --robo-steel: #8a3a05;
+}
+.gb.grape-chassis.layout-roboterminal, .gb.grape-chassis.layout-robogrip, .gb.grape-chassis.layout-fable {
+  --robo-accent: #c88aff; --robo-ink: #f0e2ff;
+  --robo-t1: #2a1838; --robo-t2: #130a1c; --robo-t3: #1f122a;
+  --robo-border: #503066; --robo-steel: #3a2350;
+}
+.gb.wood-chassis.layout-roboterminal, .gb.wood-chassis.layout-robogrip, .gb.wood-chassis.layout-fable {
+  --robo-accent: #ffcf8a; --robo-ink: #ffeed8;
+  --robo-t1: #3a2412; --robo-t2: #1c1008; --robo-t3: #2c1a0d;
+  --robo-border: #5e3c1e; --robo-steel: #422a14;
+}
+/* retro = olive field-radio; white = pale titanium (still dark enough for
+   the light legends, just clearly brighter than gunmetal). */
+.gb.retro-chassis.layout-roboterminal, .gb.retro-chassis.layout-robogrip, .gb.retro-chassis.layout-fable {
+  --robo-accent: #d8c26a; --robo-ink: #f2ead0;
+  --robo-t1: #33301f; --robo-t2: #181608; --robo-t3: #262313;
+  --robo-border: #57503a; --robo-steel: #3c3826;
+}
+.gb.white-chassis.layout-roboterminal, .gb.white-chassis.layout-robogrip, .gb.white-chassis.layout-fable {
+  --robo-accent: #e8ecf2; --robo-ink: #f4f7fb; --robo-legend: #c7ccd6;
+  --robo-t1: #4a4f58; --robo-t2: #2b2e34; --robo-t3: #3b3f47;
+  --robo-border: #7b828e; --robo-steel: #565c66;
+}
+/* (dark-chassis keeps the default gunmetal livery on purpose.) */
+
+/* ── TONE Light/Sepia = the BEIGE "iznošena plastika" robo family ──────────
+   Peđa 2026-07-11: both robo shells get a worn-beige version. It rides the
+   existing TONE control (no extra MODE stops): .gb.light is set for Light
+   AND Sepia, so one class flips the whole --robo-* system to aged putty
+   plastic with dark stencil prints. FRAME liveries below tint the worn
+   plastic itself (faded terracotta, sun-bleached sage…) — accents go DARK
+   so every print stays readable on the light body. */
+.gb.light.layout-roboterminal,
+.gb.light.layout-robogrip {
+  --robo-accent: #8a5e18;  /* dark amber: subtitle, stripes, screen spill */
+  --robo-ink: #46402f;     /* stencil wordmark */
+  --robo-legend: #4c4636;  /* printed captions above the keys (dark walnut —
+                              the lighter #6d6553 washed out on the beige) */
+  --robo-t1: #d6cdb8;      /* body tone: highlight */
+  --robo-t2: #aca188;      /* body tone: darkest */
+  --robo-t3: #c6bca4;      /* body tone: mid */
+  --robo-border: #8e846c;
+  --robo-steel: #9a917b;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -5px 14px rgba(96, 82, 52, 0.35),
+    inset 0 0 0 1px rgba(96, 82, 52, 0.4);
+}
+/* Light FRAME liveries: same worn-plastic family, hue-tinted. */
+/* Vivid Red/Orange are TONE-PROOF (Peđa 2026-07-11: "sve kombinacije") —
+   the light tone must NOT wash them to beige; the washed versions live on
+   their own FRAME stops (Faded Red / Faded Orange). These blocks re-assert
+   the vivid palette against the .gb.light beige defaults. */
+.gb.light.red-chassis.layout-roboterminal, .gb.light.red-chassis.layout-robogrip, .gb.light.red-chassis.layout-fable {
+  --robo-accent: #ffd3cd; --robo-ink: #ffe4de; --robo-legend: #ffc7c0;
+  --robo-t1: #c1141f; --robo-t2: #6e0a11; --robo-t3: #99101a;
+  --robo-border: #58080d; --robo-steel: #7c0a12;
+}
+.gb.light.orange-chassis.layout-roboterminal, .gb.light.orange-chassis.layout-robogrip, .gb.light.orange-chassis.layout-fable {
+  --robo-accent: #ffe0b8; --robo-ink: #fff0dc; --robo-legend: #ffd9ae;
+  --robo-t1: #e06010; --robo-t2: #8a3a05; --robo-t3: #b84c0a;
+  --robo-border: #6e2e04; --robo-steel: #8a3a05;
+}
+.gb.light.red-pale-chassis.layout-roboterminal, .gb.light.red-pale-chassis.layout-robogrip, .gb.light.red-pale-chassis.layout-fable {
+  --robo-accent: #8a4a40;
+  --robo-t1: #dcc2b8; --robo-t2: #b39588; --robo-t3: #cfb2a5;
+  --robo-border: #9c7a6c; --robo-steel: #a8907f;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+.gb.light.orange-pale-chassis.layout-roboterminal, .gb.light.orange-pale-chassis.layout-robogrip, .gb.light.orange-pale-chassis.layout-fable {
+  --robo-accent: #8a5c28;
+  --robo-t1: #dfc8a8; --robo-t2: #b69d78; --robo-t3: #d2b992;
+  --robo-border: #9c8058; --robo-steel: #a89272;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+.gb.light.phosphor-chassis.layout-roboterminal, .gb.light.phosphor-chassis.layout-robogrip, .gb.light.phosphor-chassis.layout-fable {
+  --robo-accent: #4e7a2e;
+  --robo-t1: #c9d2b4; --robo-t2: #a0aa84; --robo-t3: #bac49f;
+  --robo-border: #83906a; --robo-steel: #93a07c;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+.gb.light.cyberpunk-chassis.layout-roboterminal, .gb.light.cyberpunk-chassis.layout-robogrip, .gb.light.cyberpunk-chassis.layout-fable {
+  --robo-accent: #14705c; --robo-legend: #6e2850;
+  --robo-t1: #b8cdc7; --robo-t2: #8fa8a0; --robo-t3: #a9bfb8;
+  --robo-border: #6f8a82; --robo-steel: #84a098;
+  --robo-ink: #46402f;
+}
+.gb.light.ocean-chassis.layout-roboterminal, .gb.light.ocean-chassis.layout-robogrip, .gb.light.ocean-chassis.layout-fable {
+  --robo-accent: #2e6a94;
+  --robo-t1: #b4c4d2; --robo-t2: #8ba0b2; --robo-t3: #a5b7c6;
+  --robo-border: #6d8296; --robo-steel: #7f96a8;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+.gb.light.mecha-chassis.layout-roboterminal, .gb.light.mecha-chassis.layout-robogrip, .gb.light.mecha-chassis.layout-fable {
+  --robo-accent: #4a6a90;
+  --robo-t1: #c8ccd2; --robo-t2: #9fa5ae; --robo-t3: #b8bdc5;
+  --robo-border: #7e8692; --robo-steel: #939aa4;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+/* (light orange lives with the tone-proof vivid pair further up — no beige
+   wash for the vivid stops; the washed look is Faded Orange's job.) */
+.gb.light.grape-chassis.layout-roboterminal, .gb.light.grape-chassis.layout-robogrip, .gb.light.grape-chassis.layout-fable {
+  --robo-accent: #6a4292;
+  --robo-t1: #cbc0d4; --robo-t2: #a294b0; --robo-t3: #bcb0c6;
+  --robo-border: #83758f; --robo-steel: #94889f;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+.gb.light.wood-chassis.layout-roboterminal, .gb.light.wood-chassis.layout-robogrip, .gb.light.wood-chassis.layout-fable {
+  --robo-accent: #7a5220; --robo-legend: #5a4a32;
+  --robo-t1: #d2b48c; --robo-t2: #a98a62; --robo-t3: #c3a67c;
+  --robo-border: #8f7350; --robo-steel: #9d825e;
+  --robo-ink: #46402f;
+}
+.gb.light.retro-chassis.layout-roboterminal, .gb.light.retro-chassis.layout-robogrip, .gb.light.retro-chassis.layout-fable {
+  --robo-accent: #6a6224;
+  --robo-t1: #c9c2a4; --robo-t2: #a0987a; --robo-t3: #bab390;
+  --robo-border: #837c5e; --robo-steel: #928a6c;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+.gb.light.white-chassis.layout-roboterminal, .gb.light.white-chassis.layout-robogrip, .gb.light.white-chassis.layout-fable {
+  --robo-accent: #5a564c;
+  --robo-t1: #e6e2d8; --robo-t2: #bdb8ac; --robo-t3: #d7d2c6;
+  --robo-border: #9a958a; --robo-steel: #aaa599;
+  --robo-ink: #46402f;
+  --robo-legend: #4c4636;
+}
+/* Dark prints get a letterpress shadow on light plastic instead of the
+   dark-body glow. */
+.gb.light.layout-roboterminal .gb-wordmark,
+.gb.light.layout-robogrip .gb-wordmark {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.gb.light.layout-roboterminal .gb-ss-btn::before,
+.gb.light.layout-robogrip .gb-ss-btn::before {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  opacity: 1; /* the base 0.85 + engraving shadow washed the print on beige */
+}
+/* Side padding kept at 24px so the MODE→speaker cluster sits at the exact
+   same spot as in the other layouts. */
+.gb.layout-roboterminal .gb-top,
+.gb.layout-roboterminal .gb-middle,
+.gb.layout-roboterminal .gb-bottom,
+.gb.layout-robogrip .gb-top,
+.gb.layout-robogrip .gb-middle,
+.gb.layout-robogrip .gb-bottom {
+  padding-left: 24px;
+  padding-right: 24px;
+}
+/* Header + bottom console: NO separate plates in either robo shell — the
+   wordmark/keys sit straight on the body (Peđa). */
+.gb.layout-roboterminal .gb-top,
+.gb.layout-roboterminal .gb-bottom,
+.gb.layout-robogrip .gb-top,
+.gb.layout-robogrip .gb-bottom {
+  background: none;
+  border-top: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+.gb.layout-roboterminal .gb-wordmark,
+.gb.layout-robogrip .gb-wordmark {
+  color: var(--robo-ink);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6),
+    0 0 6px color-mix(in srgb, var(--robo-accent) 35%, transparent);
+}
+.gb.layout-roboterminal .gb-subtitle,
+.gb.layout-robogrip .gb-subtitle {
+  color: var(--robo-accent);
+  opacity: 0.8;
+}
+.gb.layout-roboterminal .gb-stripes i:first-child,
+.gb.layout-robogrip .gb-stripes i:first-child { background: var(--robo-accent); }
+.gb.layout-roboterminal .gb-stripes i:last-child,
+.gb.layout-robogrip .gb-stripes i:last-child { background: #6a6f78; }
+/* Recessed screen bay: steel bezel ring around the tube + a whisper of accent
+   spill so the bay reads lit from the console. */
+.gb.layout-roboterminal .gb-screen,
+.gb.layout-robogrip .gb-screen {
+  border-radius: 6px;
+  border: 1px solid #000;
+  box-shadow:
+    inset 0 4px 12px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.4),
+    0 0 0 2px var(--robo-steel),
+    0 0 0 3px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 14px color-mix(in srgb, var(--robo-accent) 7%, transparent);
+}
+/* Backlit legends + printed captions, shared by both robo key styles. */
+.gb.layout-roboterminal .gb-ss-btn,
+.gb.layout-robogrip .gb-ss-btn {
+  /* a notch smaller than the base 32×16 keys so the 12-key row sits clear
+     of the round MODE cap (Peđa) */
+  width: 29px;
+  height: 15px;
+  border-radius: 3px;
+  color: var(--robo-accent);
+  text-shadow: 0 0 3px color-mix(in srgb, var(--robo-accent) 40%, transparent);
+}
+.gb.layout-roboterminal .gb-ss-btn::after,
+.gb.layout-robogrip .gb-ss-btn::after {
+  color: var(--robo-accent);
+  font-size: 9px;
+  text-shadow: 0 0 2px color-mix(in srgb, var(--robo-accent) 60%, transparent);
+}
+.gb.layout-roboterminal .gb-ss-btn::before,
+.gb.layout-robogrip .gb-ss-btn::before {
+  color: var(--robo-legend) !important;
+  font-size: 8px;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.9);
+}
+
+/* ── layout-roboterminal: ONE material — full-body horizontal ribs ───────── */
+/* Layers (top → bottom): top sheen → depth shading → smooth edge caps → ribs.
+   The caps paint the first/last ~14px in solid body tone: the rib pattern
+   repeats every 12px from the top, so at arbitrary window heights it would
+   otherwise get CUT mid-band at the edges and read as stray extra lines
+   (Peđa saw them at the sixth-screen size). */
+/* Body (Peđa 2026-07-11): the full-body rib wallpaper is gone — the shell is
+   now the same smooth brushed gunmetal family as the Mk.III ("crni je
+   sjajan"), and the ribs survive only as ZONE accents: machined vent
+   channels on the side rails (the ::before/::after below). */
+.gb.layout-roboterminal {
+  background:
+    radial-gradient(140% 70% at 50% 0%, rgba(255, 255, 255, 0.06), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.014) 0 3px, transparent 3px 6px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 40%, rgba(0, 0, 0, 0.38)),
+    linear-gradient(180deg, var(--robo-t1) 0%, var(--robo-t3) 55%, var(--robo-t2) 100%);
+}
+/* Machined vent ribs on the side rails — FLUSH grooves milled into the body
+   (no border/seam: that's what separates them from the Mk.III's rubber grip
+   INSERTS). Same rounded-tile trick as everywhere: whole ribs always fit the
+   window-height-dependent rail, so the phase never cuts a band mid-rib. */
+.gb.layout-roboterminal::before,
+.gb.layout-roboterminal::after {
+  content: "";
+  position: absolute;
+  top: 48px; bottom: 48px; width: 14px;
+  z-index: 5;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 7px, rgba(0, 0, 0, 0.45) 7px 10px, transparent 10px 12px);
+  background-size: 100% 12px;
+  background-repeat: round;
+}
+.gb.layout-roboterminal::before { left: 5px; }
+.gb.layout-roboterminal::after { right: 5px; }
+/* Recessed console keys: each key is CARVED INTO the ribbed shell — a dark
+   well with a hard top shadow (material overhang) and a faint lit bottom
+   lip, backlit legend down in the well. Pressing sinks it deeper.
+   1px border keeps the key footprint identical to the other layouts. */
+.gb.layout-roboterminal .gb-ss-btn {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--robo-t2), #000 45%),
+    color-mix(in srgb, var(--robo-t3), #000 12%));
+  border: 1px solid color-mix(in srgb, var(--robo-t2), #000 60%);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.gb.layout-roboterminal .gb-ss-btn:active {
+  background: color-mix(in srgb, var(--robo-t2), #000 55%);
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.95),
+    inset 0 0 6px color-mix(in srgb, var(--robo-accent) 30%, transparent);
+  transform: translateY(1px);
+}
+/* Beige worn body: same layer recipe as the dark shell (sheen → depth →
+   caps → rib tile) + two grime clouds and a softer, warm depth shade —
+   yellowed field plastic, not factory-fresh. Rib tile still `round`. */
+/* Beige worn body: same smooth-metal recipe as the dark shell, flipped to
+   yellowed field plastic (dark fine grain — the white grain reads on dark
+   only) + two grime clouds. Vent ribs on the rails ride the pseudo-elements
+   above; their groove shading flips below. */
+.gb.light.layout-roboterminal {
+  background:
+    radial-gradient(140% 70% at 50% 0%, rgba(255, 255, 255, 0.22), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(60, 50, 30, 0.035) 0 3px, transparent 3px 6px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 40%, rgba(96, 78, 44, 0.22)),
+    radial-gradient(60% 40% at 18% 100%, rgba(96, 74, 38, 0.13), transparent 70%),
+    radial-gradient(50% 34% at 86% 4%, rgba(96, 74, 38, 0.10), transparent 70%),
+    linear-gradient(180deg, var(--robo-t1) 0%, var(--robo-t3) 55%, var(--robo-t2) 100%);
+}
+.gb.light.layout-roboterminal::before,
+.gb.light.layout-roboterminal::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0 1px, transparent 1px 7px, rgba(96, 82, 52, 0.45) 7px 10px, transparent 10px 12px);
+  background-size: 100% 12px;
+  background-repeat: round;
+}
+/* Keys stay DARK bakelite wells in the beige shell (old field-radio look);
+   the warm backlit legend is fixed — the livery accents are dark in light
+   tone and would kill the backlight. */
+.gb.light.layout-roboterminal .gb-ss-btn {
+  background: linear-gradient(180deg, #4a463c, #33302a);
+  border: 1px solid #2b2822;
+  color: #eebd66;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.gb.light.layout-roboterminal .gb-ss-btn::after {
+  color: #eebd66;
+  text-shadow: 0 0 2px rgba(238, 189, 102, 0.6);
+}
+.gb.light.layout-roboterminal .gb-ss-btn:active {
+  background: #26241f;
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.85),
+    inset 0 0 6px rgba(238, 189, 102, 0.3);
+}
+
+/* ── layout-robogrip: Mk.III body — brushed metal + side GRIP pads ───────── */
+/* Layers (top → bottom): top sheen → brushed grain → body gradient. */
+.gb.layout-robogrip {
+  background:
+    radial-gradient(140% 70% at 50% 0%, rgba(255, 255, 255, 0.06), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.014) 0 3px, transparent 3px 6px),
+    linear-gradient(180deg, var(--robo-t1) 0%, var(--robo-t3) 55%, var(--robo-t2) 100%);
+}
+/* Molded rubber grip pads on the side edges: fat horizontal ribs like the
+   grip of a field radio. Rounded inner edge + seam ring so they read as
+   separate rubber inserts in the metal shell. */
+.gb.layout-robogrip::before,
+.gb.layout-robogrip::after {
+  content: "";
+  position: absolute;
+  top: 52px; bottom: 52px; width: 20px;
+  z-index: 5;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0 1px, var(--robo-t1) 1px 6px, var(--robo-t2) 6px 8px, var(--robo-t3) 8px 12px),
+    linear-gradient(90deg, var(--robo-t1), var(--robo-t3));
+  /* Same rounded-tile trick as the roboterminal body: whole ribs always fit
+     the (window-height-dependent) grip, so the pattern never gets cut
+     mid-band at the grip ends. */
+  background-size: 100% 12px, auto;
+  background-repeat: round, no-repeat;
+}
+.gb.layout-robogrip::before {
+  left: 0;
+  border: 2px solid color-mix(in srgb, var(--robo-t2), #000 50%);
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06), 2px 0 6px rgba(0, 0, 0, 0.5);
+}
+.gb.layout-robogrip::after {
+  right: 0;
+  border: 2px solid color-mix(in srgb, var(--robo-t2), #000 50%);
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.06), -2px 0 6px rgba(0, 0, 0, 0.5);
+}
+/* Milled console keys: steel cap, backlit legend; pressing sinks the cap and
+   leaks a little legend light around it. */
+.gb.layout-robogrip .gb-ss-btn {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--robo-t1), #fff 12%),
+    var(--robo-t3));
+  border: 1px solid color-mix(in srgb, var(--robo-t2), #000 40%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.45),
+    0 2px 3px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+.gb.layout-robogrip .gb-ss-btn:active {
+  background: color-mix(in srgb, var(--robo-t3), #000 25%);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9),
+    inset 0 0 6px color-mix(in srgb, var(--robo-accent) 25%, transparent);
+  transform: translateY(1px);
+}
+/* Beige worn Mk.III: light worn metal body (the white grain reads on dark
+   only — flip it to a dark grain) + a soft warm depth shade; the grip pads
+   go beige rubber through the shared --robo-* vars on their own. */
+.gb.light.layout-robogrip {
+  background:
+    radial-gradient(140% 70% at 50% 0%, rgba(255, 255, 255, 0.25), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(60, 50, 30, 0.035) 0 3px, transparent 3px 6px),
+    radial-gradient(60% 40% at 18% 100%, rgba(96, 74, 38, 0.10), transparent 70%),
+    linear-gradient(180deg, var(--robo-t1) 0%, var(--robo-t3) 55%, var(--robo-t2) 100%);
+}
+/* Milled caps stay light metal in light tone — legends flip to ENGRAVED
+   dark ink instead of backlight (no glow on a lit cap). */
+.gb.light.layout-robogrip .gb-ss-btn {
+  color: var(--robo-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.gb.light.layout-robogrip .gb-ss-btn::after {
+  color: var(--robo-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.gb.light.layout-robogrip .gb-ss-btn:active {
+  background: color-mix(in srgb, var(--robo-t2), #000 15%);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+/* (No robo-specific MODE override: the round MODE cap is the system control
+   and keeps ONE fixed look in every layout — see .gb-mode-switch above.) */
+
+/* ── layout-fable: "Fable Deck" — Claude's own layout (2026-07-11) ─────────
+   Peđa gave Claude carte blanche on the aesthetic with three hard asks:
+   F-keys in TWO rows, slightly BIGGER keys, a TALLER bottom console.
+   The look: a midnight-indigo lacquered instrument with brass inlay —
+   an observatory deck, not a field radio. TONE Light/Sepia flips it to
+   ivory enamel with walnut prints (same mechanism as the beige robos).
+   FRAME re-liveries this deck too (Peđa 2026-07-11): the robo livery blocks
+   above also match .layout-fable, so their --robo-* palettes flow in through
+   the var() fallbacks below; with no livery class the fallbacks ARE the
+   authorial indigo+brass voice.
+   Like the robo shells it is CSS-owned (JS inline painting stands down). */
+.gb.layout-fable {
+  --fab-brass: var(--robo-accent, #c9964f);   /* inlay, subtitle, backlit legends */
+  --fab-ink: var(--robo-ink, #e9e2cf);        /* wordmark */
+  --fab-legend: var(--robo-legend, #969ab0);  /* printed captions above the keys */
+  --fab-t1: var(--robo-t1, #232637);          /* lacquer: highlight */
+  --fab-t2: var(--robo-t2, #12131d);          /* lacquer: darkest */
+  --fab-t3: var(--robo-t3, #1a1c2a);          /* lacquer: mid */
+  --fab-border: var(--robo-border, #3e4258);
+  --term-bg: #10111a;
+  --term-pane-bg: #090a10;
+  border: 3px solid var(--fab-border);
+  border-radius: 20px 20px 28px 28px;
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(255, 255, 255, 0.07), transparent 55%),
+    linear-gradient(165deg, var(--fab-t1) 0%, var(--fab-t3) 45%, var(--fab-t2) 100%);
+  /* double brass hairline just inside the border — the inlay line */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7),
+    inset 0 0 0 2px color-mix(in srgb, var(--fab-brass) 45%, transparent),
+    inset 0 -6px 16px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.gb.layout-fable .gb-top,
+.gb.layout-fable .gb-bottom {
+  background: none;
+  border-top: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+.gb.layout-fable .gb-wordmark {
+  color: var(--fab-ink);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6),
+    0 0 6px color-mix(in srgb, var(--fab-brass) 30%, transparent);
+}
+.gb.layout-fable .gb-subtitle { color: var(--fab-brass); opacity: 0.85; }
+.gb.layout-fable .gb-stripes i:first-child { background: var(--fab-brass); }
+.gb.layout-fable .gb-stripes i:last-child { background: #5a5e74; }
+/* Screen bay: brass ring in a dark rebate. */
+.gb.layout-fable .gb-screen {
+  border-radius: 7px;
+  border: 1px solid #000;
+  box-shadow:
+    inset 0 4px 12px rgba(0, 0, 0, 0.6),
+    0 0 0 2px color-mix(in srgb, var(--fab-brass) 55%, #2a2536),
+    0 0 0 3px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* THE deck: 12 keys in a 2×6 grid of bigger lacquer caps. The bar itself is
+   taller (more head/foot room) — Peđa's third ask. Side padding stays 24px
+   so the MODE→speaker cluster never jumps between layouts. */
+.gb-bottom.layout-fable { padding: 16px 24px 10px; align-items: flex-end; }
+/* The MODE→speaker cluster drops to the key rows' baseline so it sits at the
+   SAME spot as in every other layout (no jump when cycling modes). The
+   headroom this frees above it is decorated: an engraved brass star chart —
+   a constellation, a ringed planet and a graduated scale along the bottom —
+   the observatory deck's own voice. */
+.gb-bottom.layout-fable .gb-controls-cluster { position: relative; }
+.gb-bottom.layout-fable .gb-controls-cluster::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: calc(100% + 15px); /* clear the MODE/MAX/MIN captions that overhang the cluster box */
+  height: 17px;
+  pointer-events: none;
+  --fab-star: color-mix(in srgb, var(--fab-brass) 75%, transparent);
+  --fab-star-dim: color-mix(in srgb, var(--fab-brass) 40%, transparent);
+  background:
+    /* constellation stars */
+    radial-gradient(2px 2px at 8% 30%, var(--fab-star) 0 55%, transparent 65%),
+    radial-gradient(1.6px 1.6px at 22% 65%, var(--fab-star-dim) 0 55%, transparent 65%),
+    radial-gradient(2.4px 2.4px at 36% 25%, var(--fab-star) 0 55%, transparent 65%),
+    radial-gradient(1.6px 1.6px at 50% 55%, var(--fab-star-dim) 0 55%, transparent 65%),
+    radial-gradient(2px 2px at 64% 20%, var(--fab-star) 0 55%, transparent 65%),
+    radial-gradient(1.6px 1.6px at 92% 45%, var(--fab-star-dim) 0 55%, transparent 65%),
+    /* ringed planet */
+    radial-gradient(2.6px 2.6px at 80% 40%, var(--fab-star) 0 55%, transparent 65%),
+    radial-gradient(11px 4.5px at 80% 40%, transparent 62%, var(--fab-star-dim) 66% 74%, transparent 78%),
+    /* graduated scale along the bottom edge */
+    repeating-linear-gradient(90deg, var(--fab-star-dim) 0 1px, transparent 1px 9px)
+      left bottom / 100% 3px no-repeat;
+}
+.gb-bottom.layout-fable .gb-ss-keys {
+  display: grid;
+  grid-template-columns: repeat(6, max-content);
+  gap: 15px 8px;
+  flex: 0 0 auto;
+}
+.gb-bottom.layout-fable .group-start { margin-left: 0; }
+.gb.layout-fable .gb-ss-btn {
+  width: 38px;
+  height: 19px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fab-t1), #fff 7%), var(--fab-t2));
+  border: 1px solid color-mix(in srgb, var(--fab-brass) 35%, #14151f);
+  /* backlit legend follows the livery accent (plain amber only by default) */
+  color: color-mix(in srgb, var(--fab-brass) 45%, #f2ecd9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.5),
+    0 2px 3px rgba(0, 0, 0, 0.55);
+  text-shadow: 0 0 3px color-mix(in srgb, var(--fab-brass) 45%, transparent);
+}
+.gb.layout-fable .gb-ss-btn:active {
+  background: var(--fab-t2);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9),
+    inset 0 0 6px color-mix(in srgb, var(--fab-brass) 30%, transparent);
+  transform: translateY(1px);
+}
+.gb.layout-fable .gb-ss-btn::after {
+  color: color-mix(in srgb, var(--fab-brass) 45%, #f2ecd9);
+  font-size: 10px;
+  text-shadow: 0 0 2px color-mix(in srgb, var(--fab-brass) 55%, transparent);
+}
+.gb.layout-fable .gb-ss-btn::before {
+  color: var(--fab-legend) !important;
+  font-size: 8.5px;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.9);
+}
+/* Six wide caps per row leave room for the FULL printed words — no BOTT./EXP.
+   abbreviations on this deck. */
+.gb-bottom.layout-fable .gb-ss-btn[data-label-c]::before { content: attr(data-label); }
+
+/* Fable Deck · Ivory (TONE Light/Sepia): enamel body, walnut prints, the
+   same brass inlay gone dark enough to read on cream. */
+.gb.light.layout-fable {
+  --fab-brass: var(--robo-accent, #8a6428);
+  --fab-ink: var(--robo-ink, #47402f);
+  --fab-legend: var(--robo-legend, #6e6754);
+  --fab-t1: var(--robo-t1, #efe9dc);
+  --fab-t2: var(--robo-t2, #cfc6b4);
+  --fab-t3: var(--robo-t3, #e2dbcb);
+  --fab-border: var(--robo-border, #93876e);
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(255, 255, 255, 0.35), transparent 55%),
+    radial-gradient(60% 40% at 16% 100%, rgba(96, 78, 44, 0.10), transparent 70%),
+    linear-gradient(165deg, var(--fab-t1) 0%, var(--fab-t3) 45%, var(--fab-t2) 100%);
+  box-shadow: inset 0 0 0 1px rgba(96, 82, 52, 0.5),
+    inset 0 0 0 2px color-mix(in srgb, var(--fab-brass) 45%, transparent),
+    inset 0 -6px 16px rgba(96, 82, 52, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.gb.light.layout-fable .gb-wordmark {
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+/* Ivory caps with engraved walnut legends (the dark-deck backlight would
+   drown on cream). */
+.gb.light.layout-fable .gb-ss-btn {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fab-t1), #fff 30%), var(--fab-t3));
+  border: 1px solid color-mix(in srgb, var(--fab-brass) 50%, #b8ac94);
+  color: var(--fab-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 3px rgba(96, 82, 52, 0.25),
+    0 2px 3px rgba(96, 82, 52, 0.35);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.gb.light.layout-fable .gb-ss-btn::after {
+  color: var(--fab-ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.gb.light.layout-fable .gb-ss-btn:active {
+  background: var(--fab-t2);
+  box-shadow: inset 0 2px 5px rgba(96, 82, 52, 0.45);
+}
+
+/* ── Cassette chassis (2.2.0): image-backed shells from the v1 (Gemini) and
+   v2 (ChatGPT) mockups. The photo IS the chassis: the HTML top/bottom bars
+   hide (the artwork paints its own), and the live screen is absolutely
+   positioned over the artwork's tube via per-mode % insets measured off the
+   source art. Window shape picks the artwork (.cass-sixth/.cass-third/
+   .cass-full set from JS off the window aspect) — no free scaling by design:
+   each shape is pre-rendered by the 9-slice pipeline so cassette reels stay
+   round and keys undistorted. Tone (light/sepia) swaps to the light artwork. */
+.gb.cassette1-chassis,
+.gb.cassette2-chassis {
+  border: none;
+  border-radius: 18px;
+  padding: 0;
+  background: #000 var(--cass-img) center / 100% 100% no-repeat;
+}
+.gb.cassette1-chassis .gb-top,
+.gb.cassette2-chassis .gb-top,
+.gb.cassette1-chassis .gb-bottom,
+.gb.cassette2-chassis .gb-bottom {
+  display: none;
+}
+.gb.cassette1-chassis .gb-middle,
+.gb.cassette2-chassis .gb-middle {
+  position: absolute;
+  left: var(--cass-l);
+  top: var(--cass-t);
+  right: var(--cass-r);
+  bottom: var(--cass-b);
+  padding: 0;
+  /* The container paints the terminal background and clips to the same
+     rounded corner as the live screen — the artwork's dark opening can no
+     longer peek through the corners as black dots. */
+  background: var(--term-bg);
+  border-radius: clamp(10px, 2.6vw, 34px);
+  overflow: hidden;
+}
+/* Screen insets are identical for dark/light of the same version.
+   Light vs dark artwork is picked by the MODE (.cass-light), not the tone.
+   v1 insets pull the screen edge up to the tape-rail panels (the empty
+   gutter between rail and old opening is covered) — thinner bezels; the
+   pixel border is constant across shapes (9-slice), so %s differ per shape. */
+.gb.cassette1-chassis.cass-sixth { --cass-l: 9.47%; --cass-t: 7.39%; --cass-r: 10.53%; --cass-b: 15.17%; --cass-img: url(assets/cassette/c1-dark-sixth.webp); }
+.gb.cassette1-chassis.cass-third { --cass-l: 9.47%; --cass-t: 3.70%; --cass-r: 10.53%; --cass-b: 7.58%; --cass-img: url(assets/cassette/c1-dark-third.webp); }
+.gb.cassette1-chassis.cass-full  { --cass-l: 7.39%; --cass-t: 8.65%; --cass-r: 8.21%; --cass-b: 17.74%; --cass-img: url(assets/cassette/c1-dark-full.webp); }
+.gb.cassette2-chassis.cass-sixth { --cass-l: 9.40%; --cass-t: 8.26%; --cass-r: 9.62%; --cass-b: 11.94%; --cass-img: url(assets/cassette/c2-dark-sixth.webp); }
+.gb.cassette2-chassis.cass-third { --cass-l: 9.40%; --cass-t: 4.13%; --cass-r: 9.62%; --cass-b: 5.97%; --cass-img: url(assets/cassette/c2-dark-third.webp); }
+.gb.cassette2-chassis.cass-full  { --cass-l: 7.75%; --cass-t: 10.23%; --cass-r: 7.94%; --cass-b: 14.77%; --cass-img: url(assets/cassette/c2-dark-full.webp); }
+.gb.cass-light.cassette1-chassis.cass-sixth { --cass-img: url(assets/cassette/c1-light-sixth.webp); }
+.gb.cass-light.cassette1-chassis.cass-third { --cass-img: url(assets/cassette/c1-light-third.webp); }
+.gb.cass-light.cassette1-chassis.cass-full { --cass-img: url(assets/cassette/c1-light-full.webp); }
+.gb.cass-light.cassette2-chassis.cass-sixth { --cass-img: url(assets/cassette/c2-light-sixth.webp); }
+.gb.cass-light.cassette2-chassis.cass-third { --cass-img: url(assets/cassette/c2-light-third.webp); }
+.gb.cass-light.cassette2-chassis.cass-full { --cass-img: url(assets/cassette/c2-light-full.webp); }
+
+/* A-button press zone on cassette shells: invisible at rest (the artwork
+   already paints the key), flashes an LED rim + sink on press. */
+.gb-cass-a-zone {
+  display: none;
+  position: absolute;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 60;
+  border-radius: 14px;
+}
+.gb.cassette1-chassis .gb-cass-a-zone,
+.gb.cassette2-chassis .gb-cass-a-zone {
+  display: block;
+  left: var(--cass-a-l);
+  top: var(--cass-a-t);
+  right: var(--cass-a-r);
+  bottom: var(--cass-a-b);
+}
+.gb-cass-a-zone:active {
+  background: rgba(0, 0, 0, 0.38);
+  box-shadow: 0 0 14px 4px rgba(255, 84, 52, 0.75),
+    inset 0 0 0 2px rgba(255, 110, 70, 0.9),
+    inset 0 3px 8px rgba(0, 0, 0, 0.7);
+}
+.gb.cassette1-chassis.cass-sixth { --cass-a-l: 84.63%; --cass-a-t: 86.12%; --cass-a-r: 2.74%; --cass-a-b: 3.34%; }
+.gb.cassette1-chassis.cass-third { --cass-a-l: 84.63%; --cass-a-t: 93.06%; --cass-a-r: 2.74%; --cass-a-b: 1.67%; }
+.gb.cassette1-chassis.cass-full  { --cass-a-l: 88.01%; --cass-a-t: 83.76%; --cass-a-r: 2.13%; --cass-a-b: 3.91%; }
+.gb.cassette2-chassis.cass-sixth { --cass-a-l: 87.59%; --cass-a-t: 92.84%; --cass-a-r: 3.76%; --cass-a-b: 1.84%; }
+.gb.cassette2-chassis.cass-third { --cass-a-l: 87.59%; --cass-a-t: 96.42%; --cass-a-r: 3.76%; --cass-a-b: 0.92%; }
+.gb.cassette2-chassis.cass-full  { --cass-a-l: 89.76%; --cass-a-t: 91.14%; --cass-a-r: 3.10%; --cass-a-b: 2.27%; }
+
+/* The rest of the painted cassette controls, same treatment as the A zone:
+   invisible fixed rects over the artwork (measured per design × shape).
+   B = full-height column (third), MODE = cycle layout, − / □ / X = window. */
+.gb-cass-zone {
+  display: none;
+  position: absolute;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 60;
+  border-radius: 10px;
+}
+.gb.cassette1-chassis .gb-cass-zone,
+.gb.cassette2-chassis .gb-cass-zone {
+  display: block;
+}
+
+/* The artwork's screen opening is rounded — round the live screen to match
+   so its corners stop cutting into the painted bezel. Radius tracks the
+   window width because the artwork stretches with it. */
+.gb.cassette1-chassis .gb-screen,
+.gb.cassette2-chassis .gb-screen {
+  border-radius: clamp(10px, 2.6vw, 34px);
+  overflow: hidden;
+}
+
+/* The bare plastic frame doubles as the drag handle in cassette modes. */
+.gb.cassette1-chassis,
+.gb.cassette2-chassis {
+  cursor: move;
+}
+.gb.cassette1-chassis .gb-middle,
+.gb.cassette2-chassis .gb-middle {
+  cursor: auto;
+}
+
+/* Painted SYSTEM STATUS LEDs: glow overlays driven by the same status the
+   HTML semafor uses (mirrored on .gb as sem-status-*). The dots themselves
+   are painted in the artwork; these only add light. */
+.gb-cass-led {
+  display: none;
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 59;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.gb.cassette1-chassis .gb-cass-led,
+.gb.cassette2-chassis .gb-cass-led {
+  display: block;
+}
+.gb.sem-status-agent .gb-cass-led-green {
+  opacity: 1;
+  background: radial-gradient(circle, rgba(140, 255, 150, 0.95), rgba(60, 220, 90, 0.35) 60%, transparent 72%);
+  box-shadow: 0 0 12px 4px rgba(80, 255, 120, 0.75);
+}
+.gb.sem-status-user .gb-cass-led-yellow {
+  opacity: 1;
+  background: radial-gradient(circle, rgba(255, 235, 140, 0.95), rgba(230, 190, 60, 0.35) 60%, transparent 72%);
+  box-shadow: 0 0 12px 4px rgba(255, 210, 80, 0.75);
+}
+.gb.sem-status-idle .gb-cass-led-yellow {
+  opacity: 0.45;
+  background: radial-gradient(circle, rgba(255, 235, 140, 0.8), rgba(230, 190, 60, 0.3) 60%, transparent 72%);
+  box-shadow: 0 0 8px 2px rgba(255, 210, 80, 0.45);
+}
+.gb.sem-status-needs-user .gb-cass-led-red {
+  opacity: 1;
+  background: radial-gradient(circle, rgba(255, 150, 140, 0.95), rgba(230, 60, 50, 0.4) 60%, transparent 72%);
+  box-shadow: 0 0 12px 4px rgba(255, 90, 70, 0.8);
+  animation: cass-led-pulse 1s ease-in-out infinite;
+}
+@keyframes cass-led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.gb-cass-zone:active {
+  background: rgba(0, 0, 0, 0.38);
+  box-shadow: 0 0 12px 3px rgba(255, 178, 82, 0.6),
+    inset 0 0 0 2px rgba(255, 200, 120, 0.8),
+    inset 0 3px 8px rgba(0, 0, 0, 0.7);
+}
+.gb.cassette1-chassis.cass-sixth .gb-cass-b-zone { left: 71.89%; top: 86.12%; right: 18.74%; bottom: 3.34%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-mode-zone { left: 62.42%; top: 87.15%; right: 30.53%; bottom: 3.86%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-min-zone { left: 71.58%; top: 1.03%; right: 24.00%; bottom: 92.93%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-full-zone { left: 76.84%; top: 1.03%; right: 18.21%; bottom: 92.93%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-close-zone { left: 82.11%; top: 1.03%; right: 13.05%; bottom: 92.93%; }
+.gb.cassette1-chassis.cass-third .gb-cass-b-zone { left: 71.89%; top: 93.06%; right: 18.74%; bottom: 1.67%; }
+.gb.cassette1-chassis.cass-third .gb-cass-mode-zone { left: 62.42%; top: 93.57%; right: 30.53%; bottom: 1.93%; }
+.gb.cassette1-chassis.cass-third .gb-cass-min-zone { left: 71.58%; top: 0.51%; right: 24.00%; bottom: 96.47%; }
+.gb.cassette1-chassis.cass-third .gb-cass-full-zone { left: 76.84%; top: 0.51%; right: 18.21%; bottom: 96.47%; }
+.gb.cassette1-chassis.cass-third .gb-cass-close-zone { left: 82.11%; top: 0.51%; right: 13.05%; bottom: 96.47%; }
+.gb.cassette1-chassis.cass-full .gb-cass-b-zone { left: 72.25%; top: 84.96%; right: 19.95%; bottom: 3.76%; }
+.gb.cassette1-chassis.cass-full .gb-cass-mode-zone { left: 58.46%; top: 84.21%; right: 36.12%; bottom: 6.02%; }
+.gb.cassette1-chassis.cass-full .gb-cass-min-zone { left: 77.34%; top: 1.20%; right: 18.97%; bottom: 91.73%; }
+.gb.cassette1-chassis.cass-full .gb-cass-full-zone { left: 81.69%; top: 1.20%; right: 14.45%; bottom: 91.73%; }
+.gb.cassette1-chassis.cass-full .gb-cass-close-zone { left: 85.80%; top: 1.20%; right: 10.34%; bottom: 91.73%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-b-zone { left: 78.80%; top: 92.01%; right: 13.53%; bottom: 1.93%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-mode-zone { left: 70.15%; top: 92.56%; right: 23.76%; bottom: 2.11%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-min-zone { left: 77.89%; top: 1.84%; right: 17.74%; bottom: 93.39%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-full-zone { left: 83.01%; top: 1.84%; right: 12.78%; bottom: 93.39%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-close-zone { left: 88.42%; top: 1.84%; right: 7.07%; bottom: 93.39%; }
+.gb.cassette2-chassis.cass-third .gb-cass-b-zone { left: 78.80%; top: 96.01%; right: 13.53%; bottom: 0.96%; }
+.gb.cassette2-chassis.cass-third .gb-cass-mode-zone { left: 70.15%; top: 96.28%; right: 23.76%; bottom: 1.06%; }
+.gb.cassette2-chassis.cass-third .gb-cass-min-zone { left: 77.89%; top: 0.92%; right: 17.74%; bottom: 96.69%; }
+.gb.cassette2-chassis.cass-third .gb-cass-full-zone { left: 83.01%; top: 0.92%; right: 12.78%; bottom: 96.69%; }
+.gb.cassette2-chassis.cass-third .gb-cass-close-zone { left: 88.42%; top: 0.92%; right: 7.07%; bottom: 96.69%; }
+.gb.cassette2-chassis.cass-full .gb-cass-b-zone { left: 77.85%; top: 89.20%; right: 16.38%; bottom: 2.27%; }
+.gb.cassette2-chassis.cass-full .gb-cass-mode-zone { left: 67.12%; top: 88.07%; right: 27.73%; bottom: 2.84%; }
+.gb.cassette2-chassis.cass-full .gb-cass-min-zone { left: 82.20%; top: 2.05%; right: 13.90%; bottom: 91.59%; }
+.gb.cassette2-chassis.cass-full .gb-cass-full-zone { left: 86.72%; top: 2.05%; right: 9.55%; bottom: 91.59%; }
+.gb.cassette2-chassis.cass-full .gb-cass-close-zone { left: 90.57%; top: 2.05%; right: 5.71%; bottom: 91.59%; }
+
+/* Painted F1-F12 keys, corner globes and LED anchor points, measured from
+   the artwork per design × shape (generated by scratchpad/cass/gen_css.py
+   from zones2.json; light shares dark geometry). */
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="1"] { left: 3.89%; top: 87.02%; right: 90.42%; bottom: 9.90%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="2"] { left: 10.42%; top: 87.02%; right: 83.89%; bottom: 9.90%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="3"] { left: 16.84%; top: 87.02%; right: 77.47%; bottom: 9.90%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="4"] { left: 23.26%; top: 87.02%; right: 71.05%; bottom: 9.90%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="5"] { left: 29.68%; top: 87.02%; right: 64.63%; bottom: 9.90%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="6"] { left: 36.21%; top: 87.02%; right: 58.11%; bottom: 9.90%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="7"] { left: 3.89%; top: 91.77%; right: 90.42%; bottom: 5.14%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="8"] { left: 10.42%; top: 91.77%; right: 83.89%; bottom: 5.14%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="9"] { left: 16.84%; top: 91.77%; right: 77.47%; bottom: 5.14%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="10"] { left: 23.26%; top: 91.77%; right: 71.05%; bottom: 5.14%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="11"] { left: 29.68%; top: 91.77%; right: 64.63%; bottom: 5.14%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-f-zone[data-cf="12"] { left: 36.21%; top: 91.77%; right: 58.11%; bottom: 5.14%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-globe-zone[data-side="left"] { left: 3.47%; top: 2.44%; right: 92.74%; bottom: 92.93%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-globe-zone[data-side="right"] { left: 92.53%; top: 2.44%; right: 3.58%; bottom: 92.80%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-led-green { left: 47.38%; top: 91.32%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-led-yellow { left: 51.85%; top: 91.34%; }
+.gb.cassette1-chassis.cass-sixth .gb-cass-led-red { left: 56.80%; top: 91.36%; }
+
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="1"] { left: 3.89%; top: 93.51%; right: 90.42%; bottom: 4.95%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="2"] { left: 10.42%; top: 93.51%; right: 83.89%; bottom: 4.95%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="3"] { left: 16.84%; top: 93.51%; right: 77.47%; bottom: 4.95%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="4"] { left: 23.26%; top: 93.51%; right: 71.05%; bottom: 4.95%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="5"] { left: 29.68%; top: 93.51%; right: 64.63%; bottom: 4.95%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="6"] { left: 36.21%; top: 93.51%; right: 58.11%; bottom: 4.95%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="7"] { left: 3.89%; top: 95.89%; right: 90.42%; bottom: 2.57%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="8"] { left: 10.42%; top: 95.89%; right: 83.89%; bottom: 2.57%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="9"] { left: 16.84%; top: 95.89%; right: 77.47%; bottom: 2.57%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="10"] { left: 23.26%; top: 95.89%; right: 71.05%; bottom: 2.57%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="11"] { left: 29.68%; top: 95.89%; right: 64.63%; bottom: 2.57%; }
+.gb.cassette1-chassis.cass-third .gb-cass-f-zone[data-cf="12"] { left: 36.21%; top: 95.89%; right: 58.11%; bottom: 2.57%; }
+.gb.cassette1-chassis.cass-third .gb-cass-globe-zone[data-side="left"] { left: 3.47%; top: 1.22%; right: 92.74%; bottom: 96.47%; }
+.gb.cassette1-chassis.cass-third .gb-cass-globe-zone[data-side="right"] { left: 92.63%; top: 1.22%; right: 3.58%; bottom: 96.40%; }
+.gb.cassette1-chassis.cass-third .gb-cass-led-green { left: 47.39%; top: 95.66%; }
+.gb.cassette1-chassis.cass-third .gb-cass-led-yellow { left: 51.92%; top: 95.67%; }
+.gb.cassette1-chassis.cass-third .gb-cass-led-red { left: 56.82%; top: 95.67%; }
+
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="1"] { left: 3.04%; top: 84.81%; right: 92.53%; bottom: 11.58%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="2"] { left: 8.13%; top: 84.81%; right: 87.44%; bottom: 11.58%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="3"] { left: 13.14%; top: 84.81%; right: 82.43%; bottom: 11.58%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="4"] { left: 18.14%; top: 84.81%; right: 77.42%; bottom: 11.58%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="5"] { left: 23.15%; top: 84.81%; right: 72.41%; bottom: 11.58%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="6"] { left: 28.24%; top: 84.81%; right: 67.32%; bottom: 11.58%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="7"] { left: 3.04%; top: 90.38%; right: 92.53%; bottom: 6.02%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="8"] { left: 8.13%; top: 90.38%; right: 87.44%; bottom: 6.02%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="9"] { left: 13.14%; top: 90.38%; right: 82.43%; bottom: 6.02%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="10"] { left: 18.14%; top: 90.38%; right: 77.42%; bottom: 6.02%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="11"] { left: 23.15%; top: 90.38%; right: 72.41%; bottom: 6.02%; }
+.gb.cassette1-chassis.cass-full .gb-cass-f-zone[data-cf="12"] { left: 28.24%; top: 90.38%; right: 67.32%; bottom: 6.02%; }
+.gb.cassette1-chassis.cass-full .gb-cass-globe-zone[data-side="left"] { left: 2.71%; top: 2.86%; right: 94.33%; bottom: 91.73%; }
+.gb.cassette1-chassis.cass-full .gb-cass-globe-zone[data-side="right"] { left: 94.25%; top: 2.86%; right: 2.79%; bottom: 91.58%; }
+.gb.cassette1-chassis.cass-full .gb-cass-led-green { left: 43.11%; top: 89.86%; }
+.gb.cassette1-chassis.cass-full .gb-cass-led-yellow { left: 46.65%; top: 89.86%; }
+.gb.cassette1-chassis.cass-full .gb-cass-led-red { left: 50.46%; top: 89.89%; }
+
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="1"] { left: 2.56%; top: 93.20%; right: 93.61%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="2"] { left: 6.77%; top: 93.20%; right: 89.40%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="3"] { left: 10.90%; top: 93.20%; right: 85.26%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="4"] { left: 15.11%; top: 93.20%; right: 81.05%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="5"] { left: 19.25%; top: 93.20%; right: 76.92%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="6"] { left: 23.46%; top: 93.20%; right: 72.71%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="7"] { left: 27.74%; top: 93.20%; right: 68.50%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="8"] { left: 31.95%; top: 93.20%; right: 64.29%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="9"] { left: 36.17%; top: 93.20%; right: 60.08%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="10"] { left: 40.68%; top: 93.20%; right: 55.49%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="11"] { left: 45.34%; top: 93.20%; right: 50.90%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-f-zone[data-cf="12"] { left: 49.40%; top: 93.20%; right: 46.84%; bottom: 2.57%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-globe-zone[data-side="left"] { left: 2.78%; top: 4.13%; right: 94.14%; bottom: 92.01%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-globe-zone[data-side="right"] { left: 94.74%; top: 4.13%; right: 2.11%; bottom: 92.01%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-led-green { left: 57.97%; top: 94.47%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-led-yellow { left: 62.19%; top: 94.45%; }
+.gb.cassette2-chassis.cass-sixth .gb-cass-led-red { left: 66.47%; top: 94.47%; }
+
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="1"] { left: 2.56%; top: 96.60%; right: 93.68%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="2"] { left: 6.77%; top: 96.60%; right: 89.40%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="3"] { left: 10.90%; top: 96.60%; right: 85.26%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="4"] { left: 15.11%; top: 96.60%; right: 81.13%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="5"] { left: 19.32%; top: 96.60%; right: 76.92%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="6"] { left: 23.46%; top: 96.60%; right: 72.71%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="7"] { left: 27.74%; top: 96.60%; right: 68.50%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="8"] { left: 31.95%; top: 96.60%; right: 64.29%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="9"] { left: 36.24%; top: 96.60%; right: 59.92%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="10"] { left: 40.53%; top: 96.60%; right: 55.71%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="11"] { left: 44.81%; top: 96.60%; right: 51.35%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-f-zone[data-cf="12"] { left: 48.80%; top: 96.60%; right: 47.44%; bottom: 1.29%; }
+.gb.cassette2-chassis.cass-third .gb-cass-globe-zone[data-side="left"] { left: 2.78%; top: 2.07%; right: 94.14%; bottom: 96.01%; }
+.gb.cassette2-chassis.cass-third .gb-cass-globe-zone[data-side="right"] { left: 94.74%; top: 2.07%; right: 2.11%; bottom: 96.01%; }
+.gb.cassette2-chassis.cass-third .gb-cass-led-green { left: 57.98%; top: 97.25%; }
+.gb.cassette2-chassis.cass-third .gb-cass-led-yellow { left: 62.18%; top: 97.23%; }
+.gb.cassette2-chassis.cass-third .gb-cass-led-red { left: 66.47%; top: 97.24%; }
+
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="1"] { left: 2.05%; top: 91.59%; right: 94.79%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="2"] { left: 5.58%; top: 91.59%; right: 91.25%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="3"] { left: 9.00%; top: 91.59%; right: 87.84%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="4"] { left: 12.47%; top: 91.59%; right: 84.43%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="5"] { left: 15.94%; top: 91.59%; right: 80.96%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="6"] { left: 19.35%; top: 91.59%; right: 77.48%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="7"] { left: 22.89%; top: 91.59%; right: 74.01%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="8"] { left: 26.36%; top: 91.59%; right: 70.53%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="9"] { left: 29.84%; top: 91.59%; right: 67.06%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="10"] { left: 33.75%; top: 91.59%; right: 63.09%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="11"] { left: 36.97%; top: 91.59%; right: 59.93%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-f-zone[data-cf="12"] { left: 40.57%; top: 91.59%; right: 56.27%; bottom: 3.18%; }
+.gb.cassette2-chassis.cass-full .gb-cass-globe-zone[data-side="left"] { left: 2.30%; top: 5.11%; right: 95.16%; bottom: 90.11%; }
+.gb.cassette2-chassis.cass-full .gb-cass-globe-zone[data-side="right"] { left: 95.66%; top: 5.11%; right: 1.74%; bottom: 90.11%; }
+.gb.cassette2-chassis.cass-full .gb-cass-led-green { left: 53.22%; top: 93.17%; }
+.gb.cassette2-chassis.cass-full .gb-cass-led-yellow { left: 56.62%; top: 93.15%; }
+.gb.cassette2-chassis.cass-full .gb-cass-led-red { left: 60.23%; top: 93.17%; }
