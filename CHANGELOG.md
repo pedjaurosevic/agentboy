@@ -3,6 +3,15 @@
 All notable changes to AgentBoy are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.2.6] - 2026-07-12
+
+### Fixed
+- **`npm install -g agentboy` was broken in 2.2.5**: the Electron 43 bump
+  accidentally moved `electron` and `@electron/rebuild` from runtime
+  dependencies to devDependencies, so the published package could neither
+  launch nor rebuild `node-pty` on install. Both are runtime dependencies
+  again (as in 2.2.0).
+
 ## [2.2.5] - 2026-07-11
 
 The "stable shelf" release: the whole design arc (robo family, beige worn
