@@ -2,6 +2,10 @@
 // real shell PTY (not a synthetic DOM poke) so the xterm OSC parsers run for real.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const {
   withApp,
   evalInPage,
@@ -65,6 +69,61 @@ test("OSC 98 opens an approval dialog on the chassis; NO dismisses it", async ()
     );
     assert.equal(stillShown, false, "dialog stayed open after clicking NO");
   });
+});
+
+test("OSC 98 YES auto-checkpoints the pane's git repo (tracked changes only)", async () => {
+  // Scratch git repo OUTSIDE the agentboy tree, so a YES checkpoint lands here
+  // and never touches this repo. execFileSync (array argv) — no shell.
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "agentboy-ckpt-"));
+  const git = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+  git(["init", "-q"]);
+  git(["config", "user.email", "e2e@agentboy.test"]);
+  git(["config", "user.name", "E2E"]);
+  fs.writeFileSync(path.join(repo, "tracked.txt"), "one\n");
+  // An untracked "secret" that must NOT be swept into the checkpoint (saveCheckpoint
+  // stages tracked modifications only — this test is also that guard's E2E proof).
+  fs.writeFileSync(path.join(repo, "secret.env"), "TOKEN=shhh\n");
+  git(["add", "tracked.txt"]);
+  git(["commit", "-q", "-m", "init"]);
+
+  const countCheckpoints = () =>
+    git(["log", "--grep=^LLM Checkpoint", "--pretty=%H"]).split("\n").filter(Boolean).length;
+  assert.equal(countCheckpoints(), 0, "precondition: repo has no checkpoints yet");
+
+  await withApp({ port: PORT + 2 }, async ({ ws }) => {
+    // `cd && change && printf OSC` as ONE command: the && chain guarantees the
+    // dialog only opens if cd into the scratch repo succeeded, so a YES can
+    // never checkpoint the wrong (agentboy) repo.
+    await runInShell(
+      ws,
+      String.raw`cd ${repo} && echo two >> tracked.txt && printf '\033]98;prompt=Write the file?\007'`
+    );
+    await sleep(1300);
+    const shown = await evalInPage(
+      ws,
+      `(() => { const d = document.querySelector('.gb-dialog'); return !!d && !d.hidden; })()`
+    );
+    assert.ok(shown, "OSC 98 dialog did not open (cd into scratch repo may have failed)");
+
+    // YES: auto-checkpoint the pane's repo, then answer 'y'.
+    await nativeClick(ws, ".gb-dialog-btn.yes");
+    await sleep(1600); // gitSave is async (reset -> add -u -> commit)
+  });
+
+  assert.equal(countCheckpoints(), 1, "YES did not create exactly one checkpoint commit");
+  const body = git(["log", "-1", "--pretty=%B"]);
+  assert.match(body, /^LLM Checkpoint/, "checkpoint has wrong subject");
+  assert.match(body, /Agentboy-Checkpoint: [0-9a-f]{8}/, "checkpoint missing trailer");
+  const files = git(["show", "--name-only", "--pretty=format:", "HEAD"])
+    .split("\n")
+    .filter(Boolean);
+  assert.ok(files.includes("tracked.txt"), "tracked change was not captured in the checkpoint");
+  assert.ok(
+    !files.includes("secret.env"),
+    "untracked secret leaked into the checkpoint (saveCheckpoint guard failed)"
+  );
+
+  fs.rmSync(repo, { recursive: true, force: true });
 });
 
 test("OSC 99 led=off drives the semafor to the off state", async () => {
