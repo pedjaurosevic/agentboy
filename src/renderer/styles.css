@@ -153,6 +153,20 @@ body {
   cursor: move;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
+/* Full-height grab rails on the left/right chassis edges — a move cursor on
+   hover signals "drag me", exactly like the top bar. Thin so they ride the
+   plastic border without eating the panes' content. */
+.gb-edge-drag {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 45;
+  cursor: move;
+  background: transparent;
+}
+.gb-edge-drag.left { left: 0; }
+.gb-edge-drag.right { right: 0; }
 .gb.light .gb-top {
   color: #3a352b;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
@@ -291,6 +305,10 @@ body {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  /* Sit above the right edge drag rail (z-index 45) so the close/min/full
+     buttons are always clickable even where they abut the rail. */
+  position: relative;
+  z-index: 50;
 }
 .gb-min,
 .gb-full,
@@ -615,27 +633,26 @@ body {
   content: none;
 }
 
-/* ---- Dystopian battle scars ---------------------------------------------
-   A hairline crack in the screen glass, top-right corner, shown only while
-   the Dystopian theme is active. Dark stroke + offset light stroke reads as
-   light refracting in a crack; quiet enough to never fight the text. */
+/* ---- Glass wear: cracked screen ----------------------------------------
+   Hairline fractures in the screen glass itself, scattered across the tube
+   (top-right, bottom-left, mid-right), shown for the "Glass" wear stop on
+   ANY theme. Dark stroke + offset light stroke reads as light refracting in
+   a crack; quiet enough to never fight the text. The layered background that
+   places the individual cracks is built in JS (glassCracksSvg) so the ink can
+   follow the tube's brightness. */
 .gb-crack {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 220px;
-  height: 220px;
+  inset: 0;
   pointer-events: none;
   z-index: 30;
   display: none;
-  opacity: 0.55;
-  background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20220%20220%22%3E%3Cg%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%3E%3Cg%20stroke%3D%22rgba%280%2C0%2C0%2C0.5%29%22%20stroke-width%3D%221.1%22%3E%3Cpath%20d%3D%22M219%2014%20L197%2030%20L173%2039%20L152%2060%20L138%2068%20L121%2088%20L114%20103%22%2F%3E%3Cpath%20d%3D%22M197%2030%20L189%2012%22%2F%3E%3Cpath%20d%3D%22M173%2039%20L154%2028%20L140%2027%22%2F%3E%3Cpath%20d%3D%22M152%2060%20L163%2082%20L158%20101%22%2F%3E%3Cpath%20d%3D%22M138%2068%20L116%2072%20L101%2066%22%2F%3E%3Cpath%20d%3D%22M121%2088%20L104%2096%22%2F%3E%3C%2Fg%3E%3Cg%20stroke%3D%22rgba%28255%2C255%2C255%2C0.38%29%22%20stroke-width%3D%220.7%22%3E%3Cpath%20d%3D%22M219.8%2014.8%20L197.8%2030.8%20L173.8%2039.8%20L152.8%2060.8%20L138.8%2068.8%20L121.8%2088.8%20L114.8%20103.8%22%2F%3E%3Cpath%20d%3D%22M197.8%2030.8%20L189.8%2012.8%22%2F%3E%3Cpath%20d%3D%22M173.8%2039.8%20L154.8%2028.8%20L140.8%2027.8%22%2F%3E%3Cpath%20d%3D%22M152.8%2060.8%20L163.8%2082.8%20L158.8%20101.8%22%2F%3E%3Cpath%20d%3D%22M138.8%2068.8%20L116.8%2072.8%20L101.8%2066.8%22%2F%3E%3Cpath%20d%3D%22M121.8%2088.8%20L104.8%2096.8%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E") no-repeat top right / contain;
+  opacity: 0.6;
 }
-.gb.theme-dystopian .gb-crack {
+.gb.wear-glass .gb-crack {
   display: block;
 }
-.gb.light.theme-dystopian .gb-crack {
-  opacity: 0.45;
+.gb.light.wear-glass .gb-crack {
+  opacity: 0.5;
 }
 
 /* Dim the CRT planes while text is selected in the pane — the multiply plane
@@ -915,6 +932,68 @@ body {
     rgba(40, 44, 52, calc(var(--crt-intensity) * 0.016)) 62%,
     transparent 100%
   );
+}
+
+/* ---- User CRT FX pills (LOOK menu) --------------------------------------
+   Independent toggles that stack on ANY base CRT mode, exactly like Sweep and
+   Noise. Each is fully self-contained (no reliance on the base-mode planes) so
+   any combination composes cleanly. Gated with :not(.crt-off) so they follow
+   the base CRT switch, matching Sweep/Noise. First-pass strengths — tune by
+   eye. */
+
+/* CHROMA — RGB fringe: the whole rendered terminal is split into a
+   red-shifted and a cyan-shifted copy via an SVG channel-offset filter, like
+   a slightly misconverged tube. Applied to .gb-term (the text layer) only —
+   the .crt overlays are siblings and stay crisp. */
+.gb.crt-fx-chroma:not(.crt-off) .gb-term {
+  filter: url(#crt-chroma-filter);
+}
+
+/* FLICKER — the picture never quite holds still: a subtle, slightly erratic
+   brightness flutter across the text layer. */
+@keyframes crt-fx-flicker {
+  0%, 100% { opacity: 1; }
+  4% { opacity: 0.84; }
+  8% { opacity: 0.98; }
+  42% { opacity: 0.93; }
+  46% { opacity: 1; }
+  50% { opacity: 0.8; }
+  53% { opacity: 0.97; }
+  78% { opacity: 0.9; }
+  82% { opacity: 1; }
+}
+.gb.crt-fx-flicker:not(.crt-off) .gb-term {
+  animation: crt-fx-flicker 3.4s linear infinite;
+}
+
+/* VIGNETTE + CURVE live on their own overlay planes inside .crt (siblings of
+   the noise/sweep planes), so they sit ABOVE the terminal text — the only way
+   a darkening/sheen overlay is visible, since xterm's row spans are opaque.
+   Base rules: full-bleed, hidden until the pill turns them on. */
+.crt-vignette,
+.crt-bulge {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  border-radius: inherit;
+}
+/* VIGNETTE — corner falloff: the tube edges sink into shadow. */
+.gb.crt-fx-vignette:not(.crt-off) :is(.gb-pane, .gb-saver-overlay) .crt .crt-vignette {
+  display: block;
+  background: radial-gradient(128% 128% at 50% 48%, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
+}
+.gb.light.crt-fx-vignette:not(.crt-off) :is(.gb-pane, .gb-saver-overlay) .crt .crt-vignette {
+  background: radial-gradient(128% 128% at 50% 48%, transparent 52%, rgba(0, 0, 0, 0.32) 100%);
+}
+/* CURVE — glass dome: a barrel edge-shade toward the rim plus a soft specular
+   sheen swept across the top-left, so the flat picture reads as a bulged tube
+   face. No geometric warp (text stays sharp). */
+.gb.crt-fx-bulge:not(.crt-off) :is(.gb-pane, .gb-saver-overlay) .crt .crt-bulge {
+  display: block;
+  background:
+    radial-gradient(120% 88% at 28% 12%, rgba(255, 255, 255, 0.10), transparent 44%),
+    radial-gradient(132% 132% at 50% 48%, transparent 56%, rgba(0, 0, 0, 0.5) 100%);
 }
 
 /* Turn-on flash: a one-shot overlay the JS drops on the screen when the CRT

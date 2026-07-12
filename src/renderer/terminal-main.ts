@@ -18,6 +18,10 @@ import { makeSgrDimFilter } from "./sgr-filter";
 import { sanitizePasteText } from "./paste";
 import { looksLikeChoicePrompt } from "./led-heuristics";
 import { formatApprovalOrigin } from "./approval-origin";
+import {
+  wornSvg, crackSvg, glassCracksSvg, mechaPanelsSvg, orangePcbSvg, grapePcbSvg, woodgrainSvg,
+  MECHA_METAL_DARK, MECHA_METAL_LIGHT,
+} from "./chassis-art";
 import { HELP_SECTIONS, HELP_TAGLINE, HELP_FOOTER } from "./help-content";
 import { ActivityEvent, pushActivity, formatActivity } from "./activity-log";
 import { containsPoint, distanceToRect, nearestColumn, rowFor, gridRectFor } from "./grid";
@@ -34,7 +38,6 @@ import {
   toggleMusic,
   playTypeTick,
 } from "./audio";
-
 
 const BASE_FONT = 14; // ~10% larger than the original 13
 const SEARCH_OPTS = {
@@ -55,7 +58,6 @@ interface Pane {
   pointerInside?: boolean;
   blurRefocusTimer?: number;
 }
-
 
 async function main() {
   let currentPresetId = 8;
@@ -165,7 +167,7 @@ async function main() {
             <button class="gb-ss-btn appear-key" data-fn="crt" title="CRT effect (right-click reverses)" aria-label="F4" data-label="CRT"></button>
             <button class="gb-ss-btn appear-key group-start" data-fn="crt-" title="CRT intensity -" aria-label="F5" data-label="CRT-"></button>
             <button class="gb-ss-btn appear-key" data-fn="crt+" title="CRT intensity +" aria-label="F6" data-label="CRT+"></button>
-            <button class="gb-ss-btn appear-key" data-fn="wear" title="Wear: new / worn / cracked (right-click reverses). Mecha lives on the Frame axis." aria-label="F7" data-label="WEAR"></button>
+            <button class="gb-ss-btn appear-key" data-fn="wear" title="Wear: new / worn / cracked / glass (right-click reverses). Mecha lives on the Frame axis." aria-label="F7" data-label="WEAR"></button>
             <button class="gb-ss-btn win-key" data-fn="noframe" data-fc="F2" data-ff="F8" title="Bare: hide the chassis - bare terminal" aria-label="F2" data-label="BARE"></button>
             <button class="gb-ss-btn win-key group-start" data-fn="saver" data-fc="F3" data-ff="F9" title="cmatrix screensaver (toggles; any key exits too)" aria-label="F3" data-label="SAVER"></button>
             <button class="gb-ss-btn win-key" data-fn="float" data-fc="F4" data-ff="F10" title="Float mode" aria-label="F4" data-label="FLOAT"></button>
@@ -223,6 +225,25 @@ async function main() {
   crack.className = "gb-crack";
   gbScreen.appendChild(crack);
 
+  // Off-screen SVG filter for the CHROMA CRT-FX pill: splits the picture into
+  // a red-shifted and a cyan-shifted copy (misconverged-tube RGB fringe).
+  // Referenced by `.gb-term { filter: url(#crt-chroma-filter) }` when the pill
+  // is on. Defined once, globally.
+  const chromaDefs = document.createElement("div");
+  chromaDefs.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+  chromaDefs.setAttribute("aria-hidden", "true");
+  chromaDefs.innerHTML =
+    `<svg xmlns="http://www.w3.org/2000/svg"><defs>` +
+    `<filter id="crt-chroma-filter" x="-2%" y="-2%" width="104%" height="104%" color-interpolation-filters="sRGB">` +
+    `<feColorMatrix in="SourceGraphic" type="matrix" ` +
+    `values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r"/>` +
+    `<feOffset in="r" dx="1.4" dy="0" result="ro"/>` +
+    `<feColorMatrix in="SourceGraphic" type="matrix" ` +
+    `values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="c"/>` +
+    `<feOffset in="c" dx="-1.4" dy="0" result="co"/>` +
+    `<feBlend in="ro" in2="co" mode="screen"/>` +
+    `</filter></defs></svg>`;
+  document.body.appendChild(chromaDefs);
 
   const panes = new Map<HTMLElement, Pane>();
 
@@ -262,7 +283,7 @@ async function main() {
   // Wear axis (new → worn → cracked). wornOn (the grime-overlay flag)
   // is DERIVED: worn and cracked both carry the scratch/grime layer; cracked
   // adds fractures; new is pristine.
-  const WEAR_LEVELS = ["new", "worn", "cracked"] as const;
+  const WEAR_LEVELS = ["new", "worn", "cracked", "glass"] as const;
   type WearLevel = (typeof WEAR_LEVELS)[number];
   let wearLevel: WearLevel = "new";
   if (config.wear && (config.wear as unknown) !== "mecha" && WEAR_LEVELS.includes(config.wear as WearLevel)) {
@@ -296,6 +317,8 @@ async function main() {
   // "off" = no overlay (bare screen-glass hint).
   type CrtMode = "mask" | "grille" | "slot" | "glass" | "full" | "scanlines" | "vector" | "off";
   const CRT_MODES: CrtMode[] = ["mask", "grille", "slot", "glass", "full", "scanlines", "vector", "off"];
+  // Combinable CRT FX pills (stack on any base mode, unlike the exclusive modes).
+  type CrtFx = "sweep" | "noise" | "chroma" | "flicker" | "vignette" | "bulge";
   let crtMode: CrtMode = CRT_MODES.includes(config.crtMode as CrtMode)
     ? (config.crtMode as CrtMode)
     : "mask";
@@ -304,10 +327,16 @@ async function main() {
       ? Math.max(0, Math.min(CRT_STEPS - 1, Math.round(config.crtIntensity)))
       : 5;
   // Combinable CRT FX (Peđa 2026-07-11): independent toggles that stack on
-  // ANY base CRT mode — sweep = rolling retrace band, noise = broadcast
-  // grain. Live in the LOOK menu FX row; F4 keeps cycling the base modes.
+  // ANY base CRT mode — sweep = rolling retrace band, noise = broadcast grain,
+  // chroma = RGB fringe, flicker = brightness flutter, vignette = corner
+  // falloff, curve = glass-dome edge shading. Live in the LOOK menu FX row;
+  // F4 keeps cycling the base modes.
   let crtSweep = config.crtSweep === true;
   let crtNoiseFx = config.crtNoise === true;
+  let crtChroma = config.crtChroma === true;
+  let crtFlickerFx = config.crtFlicker === true;
+  let crtVignetteFx = config.crtVignette === true;
+  let crtBulgeFx = config.crtBulge === true;
 
   // Debounced (F3/F4 get clicked in bursts). saveConfig in main merges the
   // patch into the file, so fields not managed here (shell, border) survive.
@@ -325,6 +354,10 @@ async function main() {
         crtIntensity: crtDensityIndex,
         crtSweep,
         crtNoise: crtNoiseFx,
+        crtChroma,
+        crtFlicker: crtFlickerFx,
+        crtVignette: crtVignetteFx,
+        crtBulge: crtBulgeFx,
         outerStyle: outerStyleOverride,
         innerStyle: innerStyleOverride,
         fontSize,
@@ -375,6 +408,10 @@ async function main() {
     gb.classList.toggle("crt-vector", crtMode === "vector");
     gb.classList.toggle("crt-fx-sweep", crtSweep);
     gb.classList.toggle("crt-fx-noise", crtNoiseFx);
+    gb.classList.toggle("crt-fx-chroma", crtChroma);
+    gb.classList.toggle("crt-fx-flicker", crtFlickerFx);
+    gb.classList.toggle("crt-fx-vignette", crtVignetteFx);
+    gb.classList.toggle("crt-fx-bulge", crtBulgeFx);
     // Phosphor bloom: dark themes only (dark ink blooming on paper = smudge);
     // glass gets half — no visible mask means less apparent dot glow.
     // vector mode gets more glow for Vectrex phosphor style.
@@ -440,11 +477,26 @@ async function main() {
     persistState();
   };
 
-  const setCrtFx = (fx: "sweep" | "noise", on: boolean) => {
+  const CRT_FX_LABELS: Record<CrtFx, string> = {
+    sweep: "Sweep", noise: "Noise", chroma: "Chroma",
+    flicker: "Flicker", vignette: "Vignette", bulge: "Curve",
+  };
+  const crtFxOn = (fx: CrtFx): boolean =>
+    fx === "sweep" ? crtSweep
+      : fx === "noise" ? crtNoiseFx
+      : fx === "chroma" ? crtChroma
+      : fx === "flicker" ? crtFlickerFx
+      : fx === "vignette" ? crtVignetteFx
+      : crtBulgeFx;
+  const setCrtFx = (fx: CrtFx, on: boolean) => {
     if (fx === "sweep") crtSweep = on;
-    else crtNoiseFx = on;
+    else if (fx === "noise") crtNoiseFx = on;
+    else if (fx === "chroma") crtChroma = on;
+    else if (fx === "flicker") crtFlickerFx = on;
+    else if (fx === "vignette") crtVignetteFx = on;
+    else crtBulgeFx = on;
     applyCrtState();
-    showToast(`CRT ${fx === "sweep" ? "Sweep" : "Noise"} ${on ? "On" : "Off"}${on && crtMode === "off" ? " (CRT is Off)" : ""}`);
+    showToast(`CRT ${CRT_FX_LABELS[fx]} ${on ? "On" : "Off"}${on && crtMode === "off" ? " (CRT is Off)" : ""}`);
     persistState();
   };
 
@@ -463,178 +515,6 @@ async function main() {
     showToast(`CRT Intensity ${crtDensityIndex + 1}/${CRT_STEPS}`);
     persistState();
   };
-
-  // ---- worn filter assets --------------------------------------------------
-  // Battle damage as a single stretched SVG layer — irregular scratches (dark
-  // gouge + offset light catch), a sticker ghost with glue shadow on the
-  // bottom strip, and polished scuff swipes. Geometry hugs the visible shell:
-  // top bar, bottom strip, side rails — the middle is hidden behind the
-  // screen. Two ink sets: "dk" marks are gouges, "lt" marks catch the light.
-  const wornSvg = (dk: string, lt: string) =>
-    "url(\"data:image/svg+xml," +
-    encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 660' preserveAspectRatio='xMidYMid slice'>` +
-        `<g fill='none' stroke-linecap='round'>` +
-        `<g stroke='${dk}' stroke-width='1.1'>` +
-        `<path d='M42 651 L178 639'/><path d='M700 616 l 92 15'/>` +
-        `<path d='M250 646 l 20 -7'/><path d='M545 608 l 28 5'/>` +
-        `<path d='M64 18 l 74 11'/><path d='M818 38 l -58 26'/>` +
-        `<path d='M6 320 l 3 74'/><path d='M893 210 l -3 88'/>` +
-        `</g>` +
-        `<g stroke='${lt}' stroke-width='0.7'>` +
-        `<path d='M43 652.2 L179 640.2'/><path d='M700.6 617.4 l 92 15'/>` +
-        `<path d='M545.6 609.3 l 28 5'/><path d='M64.6 19.2 l 74 11'/>` +
-        `</g>` +
-        `</g>` +
-        `<g transform='rotate(-2.5 548 629)'>` +
-        `<rect x='505' y='614' width='86' height='30' fill='${lt}' opacity='0.45'/>` +
-        `<rect x='505' y='614' width='86' height='30' fill='none' stroke='${dk}' stroke-width='1' opacity='0.6'/>` +
-        `<path d='M505 614 l 14 0 l -14 12 z' fill='${dk}' opacity='0.35'/>` +
-        `</g>` +
-        `<ellipse cx='140' cy='648' rx='62' ry='7' fill='${lt}' opacity='0.28'/>` +
-        `<ellipse cx='760' cy='634' rx='40' ry='6' fill='${dk}' opacity='0.30'/>` +
-        `<ellipse cx='450' cy='14' rx='90' ry='6' fill='${dk}' opacity='0.22'/>` +
-        `</svg>`
-    ) +
-    "\")";
-  // Cracked: a branching fracture radiating from the upper-left, drawn as a
-  // dark fissure with a light stress-highlight offset a hair below it. Layers
-  // ON TOP of the worn grime (cracked = worn + fractures).
-  const crackSvg = (dk: string, lt: string) =>
-    "url(\"data:image/svg+xml," +
-    encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 660' preserveAspectRatio='xMidYMid slice'>` +
-        `<g fill='none' stroke-linecap='round' stroke-linejoin='round'>` +
-        `<g stroke='${dk}' stroke-width='2.4'>` +
-        `<path d='M150 0 L176 44 L150 92 L196 150 L168 214 L214 300'/>` +
-        `<path d='M176 44 L232 60'/><path d='M196 150 L150 178'/>` +
-        `<path d='M168 214 L108 232'/><path d='M214 300 L262 322 L250 372'/>` +
-        `<path d='M820 640 L788 590 L826 548 L792 500'/><path d='M788 590 L734 604'/>` +
-        `</g>` +
-        `<g stroke='${lt}' stroke-width='1.1'>` +
-        `<path d='M152 1 L178 45 L152 93 L198 151 L170 215 L216 301'/>` +
-        `<path d='M822 641 L790 591 L828 549'/>` +
-        `</g>` +
-        `</g>` +
-        `</svg>`
-    ) +
-    "\")";
-
-  // Mecha: exposed industrial shell — brushed-metal ground, riveted panel
-  // seams, corner bolts. Replaces the plastic look entirely (not a filter).
-  const mechaPanelsSvg = (line: string, rivet: string, hi: string) =>
-    "url(\"data:image/svg+xml," +
-    encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 660' preserveAspectRatio='xMidYMid slice'>` +
-        `<g stroke='${line}' stroke-width='2' fill='none'>` +
-        `<path d='M0 96 H900'/><path d='M0 566 H900'/><path d='M156 0 V96'/><path d='M744 0 V96'/><path d='M156 566 V660'/><path d='M744 566 V660'/>` +
-        `</g>` +
-        `<g fill='${rivet}'>` +
-        [24, 156, 300, 450, 600, 744, 876].map((x) => `<circle cx='${x}' cy='22' r='6.5'/><circle cx='${x}' cy='638' r='6.5'/>`).join("") +
-        `<circle cx='22' cy='300' r='6.5'/><circle cx='878' cy='300' r='6.5'/>` +
-        `</g>` +
-        `<g fill='${hi}'>` +
-        [24, 156, 300, 450, 600, 744, 876].map((x) => `<circle cx='${x - 2}' cy='20' r='2.2'/>`).join("") +
-        `</g>` +
-        `</svg>`
-    ) +
-    "\")";
-
-  // Atomic Orange: translucent orange plastic with PCB traces and pads.
-  const orangePcbSvg = () =>
-    "url(\"data:image/svg+xml," +
-    encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 660' preserveAspectRatio='xMidYMid slice'>` +
-        `<g stroke='rgba(255, 160, 0, 0.28)' stroke-width='1.5' fill='none'>` +
-          `<rect x='380' y='360' width='140' height='140' rx='8' stroke='rgba(255, 160, 0, 0.4)' stroke-width='2'/>` +
-          `<path d='M380 430 H250 M520 430 H650'/>` +
-          `<path d='M450 360 V280 M450 500 V580'/>` +
-          `<path d='M250 430 L210 390 H80'/>` +
-          `<path d='M650 430 L690 470 H820'/>` +
-          `<path d='M450 280 L400 230 V80'/>` +
-          `<path d='M450 580 L490 620 H800'/>` +
-          `<path d='M80 390 L50 360 V100'/>` +
-          `<path d='M820 470 L850 500 V560'/>` +
-          `<path d='M156 120 H300 L340 160 V220'/>` +
-          `<path d='M744 120 H600 L560 160 V220'/>` +
-          `<rect x='180' y='180' width='80' height='120' rx='4' stroke='rgba(255, 160, 0, 0.35)'/>` +
-          `<rect x='640' y='180' width='80' height='120' rx='4' stroke='rgba(255, 160, 0, 0.35)'/>` +
-          `<path d='M260 240 H380'/>` +
-          `<path d='M640 240 H520'/>` +
-        `</g>` +
-        `<g fill='rgba(255, 200, 80, 0.45)'>` +
-          `<circle cx='380' cy='430' r='3'/><circle cx='520' cy='430' r='3'/>` +
-          `<circle cx='450' cy='360' r='3'/><circle cx='450' cy='500' r='3'/>` +
-          `<circle cx='250' cy='430' r='3'/><circle cx='650' cy='430' r='3'/>` +
-          `<circle cx='450' cy='280' r='3'/><circle cx='450' cy='580' r='3'/>` +
-          `<circle cx='80' cy='390' r='3'/><circle cx='820' cy='470' r='3'/>` +
-          `<circle cx='180' cy='200' r='2.5'/><circle cx='180' cy='220' r='2.5'/><circle cx='180' cy='240' r='2.5'/><circle cx='180' cy='260' r='2.5'/>` +
-          `<circle cx='720' cy='200' r='2.5'/><circle cx='720' cy='220' r='2.5'/><circle cx='720' cy='240' r='2.5'/><circle cx='720' cy='260' r='2.5'/>` +
-        `</g>` +
-      `</svg>`
-    ) +
-    "\")";
-
-  // Grape GBC: translucent purple plastic with silver PCB traces and pads.
-  const grapePcbSvg = () =>
-    "url(\"data:image/svg+xml," +
-    encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 660' preserveAspectRatio='xMidYMid slice'>` +
-        `<g stroke='rgba(255, 255, 255, 0.16)' stroke-width='1.5' fill='none'>` +
-          `<rect x='380' y='360' width='140' height='140' rx='8' stroke='rgba(255, 255, 255, 0.25)' stroke-width='2'/>` +
-          `<path d='M380 430 H250 M520 430 H650'/>` +
-          `<path d='M450 360 V280 M450 500 V580'/>` +
-          `<path d='M250 430 L210 390 H80'/>` +
-          `<path d='M650 430 L690 470 H820'/>` +
-          `<path d='M450 280 L400 230 V80'/>` +
-          `<path d='M450 580 L490 620 H800'/>` +
-          `<path d='M80 390 L50 360 V100'/>` +
-          `<path d='M820 470 L850 500 V560'/>` +
-          `<path d='M156 120 H300 L340 160 V220'/>` +
-          `<path d='M744 120 H600 L560 160 V220'/>` +
-          `<rect x='180' y='180' width='80' height='120' rx='4' stroke='rgba(255, 255, 255, 0.2)'/>` +
-          `<rect x='640' y='180' width='80' height='120' rx='4' stroke='rgba(255, 255, 255, 0.2)'/>` +
-          `<path d='M260 240 H380'/>` +
-          `<path d='M640 240 H520'/>` +
-        `</g>` +
-        `<g fill='rgba(200, 220, 255, 0.35)'>` +
-          `<circle cx='380' cy='430' r='3'/><circle cx='520' cy='430' r='3'/>` +
-          `<circle cx='450' cy='360' r='3'/><circle cx='450' cy='500' r='3'/>` +
-          `<circle cx='250' cy='430' r='3'/><circle cx='650' cy='430' r='3'/>` +
-          `<circle cx='450' cy='280' r='3'/><circle cx='450' cy='580' r='3'/>` +
-          `<circle cx='80' cy='390' r='3'/><circle cx='820' cy='470' r='3'/>` +
-          `<circle cx='180' cy='200' r='2.5'/><circle cx='180' cy='220' r='2.5'/><circle cx='180' cy='240' r='2.5'/><circle cx='180' cy='260' r='2.5'/>` +
-          `<circle cx='720' cy='200' r='2.5'/><circle cx='720' cy='220' r='2.5'/><circle cx='720' cy='240' r='2.5'/><circle cx='720' cy='260' r='2.5'/>` +
-        `</g>` +
-      `</svg>`
-    ) +
-    "\")";
-
-  // Woodgrain: vintage walnut wood finish.
-  const woodgrainSvg = () =>
-    "url(\"data:image/svg+xml," +
-    encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 660' preserveAspectRatio='xMidYMid slice'>` +
-        `<g stroke='rgba(60, 30, 10, 0.14)' stroke-width='2' fill='none'>` +
-          `<path d='M0 50 Q 225 80 450 50 T 900 50'/>` +
-          `<path d='M0 120 Q 300 160 600 120 T 900 120'/>` +
-          `<path d='M0 200 Q 150 250 450 200 T 900 200'/>` +
-          `<path d='M0 280 Q 400 320 700 280 T 900 280'/>` +
-          `<path d='M0 360 Q 250 420 500 360 T 900 360'/>` +
-          `<path d='M0 450 Q 350 500 750 450 T 900 450'/>` +
-          `<path d='M0 530 Q 200 600 550 530 T 900 530'/>` +
-          `<path d='M0 600 Q 450 640 900 600'/>` +
-        `</g>` +
-      `</svg>`
-    ) +
-    "\")";
-  const MECHA_METAL_DARK =
-    "repeating-linear-gradient(94deg, rgba(255,255,255,0.06) 0 2px, rgba(0,0,0,0.07) 2px 4px), " +
-    "linear-gradient(180deg, #6b7079 0%, #565b63 55%, #40434a 100%)";
-  const MECHA_METAL_LIGHT =
-    "repeating-linear-gradient(94deg, rgba(255,255,255,0.09) 0 2px, rgba(0,0,0,0.05) 2px 4px), " +
-    "linear-gradient(180deg, #d7dbe0 0%, #c2c6cc 55%, #aab0b7 100%)";
-
 
   const applyThemePreset = (id: number, light: boolean) => {
     const preset = THEME_PRESETS[id - 1];
@@ -957,11 +837,23 @@ async function main() {
       }
     }
 
+    // Glass wear: clean chassis, but the SCREEN glass is fractured in a few
+    // scattered spots. Ink follows the tube brightness so the cracks read on
+    // dark phosphor and light paper alike. Independent of the grime axis above.
+    crack.style.background =
+      wearLevel === "glass"
+        ? glassCracksSvg(
+            light ? "rgba(0,0,0,0.42)" : "rgba(0,0,0,0.62)",
+            light ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.34)",
+          )
+        : "";
+
     // Toggle class list
     gb.classList.toggle("light", light);
     gb.classList.toggle("sepia", sepiaOn);
     gb.classList.toggle("worn-chassis", wornOn);
     gb.classList.toggle("cracked-chassis", wearLevel === "cracked");
+    gb.classList.toggle("wear-glass", wearLevel === "glass");
     gb.classList.toggle("mecha-chassis", outerStyleOverride === 'mecha');
     gb.classList.toggle("orange-chassis", outerStyleOverride === 'orange');
     gb.classList.toggle("grape-chassis", outerStyleOverride === 'grape');
@@ -1012,9 +904,9 @@ async function main() {
     setTone(TONE_ORDER[(TONE_ORDER.indexOf(toneOf()) + dir + TONE_ORDER.length) % TONE_ORDER.length]);
   };
 
-  // ── Wear axis (new / worn / cracked) ── same setter shape as tone.
+  // ── Wear axis (new / worn / cracked / glass) ── same setter shape as tone.
   const WEAR_LABELS: Record<WearLevel, string> = {
-    new: "New", worn: "Worn", cracked: "Cracked",
+    new: "New", worn: "Worn", cracked: "Cracked", glass: "Glass",
   };
   const setWear = (w: WearLevel) => {
     wearLevel = w;
@@ -1627,7 +1519,15 @@ async function main() {
     crtNoise.className = "crt-noise";
     const crtSweepEl = document.createElement("div");
     crtSweepEl.className = "crt-sweep";
-    crt.append(crtNoise, crtSweepEl);
+    // Vignette (corner falloff) and Curve (glass-dome edge shade + sheen) are
+    // overlay planes — they must sit ABOVE the terminal text, exactly like the
+    // noise/sweep planes. Painting them on .gb-term (box-shadow/background)
+    // hides them behind xterm's opaque row spans.
+    const crtVigEl = document.createElement("div");
+    crtVigEl.className = "crt-vignette";
+    const crtBulgeEl = document.createElement("div");
+    crtBulgeEl.className = "crt-bulge";
+    crt.append(crtNoise, crtSweepEl, crtVigEl, crtBulgeEl);
     const scrollTrack = document.createElement("div");
     scrollTrack.className = "gb-scroll-track";
     el.append(host, crt, scrollTrack);
@@ -2118,13 +2018,13 @@ async function main() {
     <div class="gb-look-row" data-row="fx">
       <span class="gb-look-key">FX</span>
       <span class="gb-look-seg" data-seg="fx">
-        <button data-act="fx:sweep" title="Rolling retrace band — stacks on any CRT mode">Sweep</button><button data-act="fx:noise" title="Broadcast grain — stacks on any CRT mode">Noise</button>
+        <button data-act="fx:sweep" title="Rolling retrace band — stacks on any CRT mode">Sweep</button><button data-act="fx:noise" title="Broadcast grain — stacks on any CRT mode">Noise</button><button data-act="fx:chroma" title="RGB fringe — misconverged-tube colour split">Chroma</button><button data-act="fx:flicker" title="Brightness flutter — the picture never quite holds still">Flicker</button><button data-act="fx:vignette" title="Corner falloff — the tube edges sink into shadow">Vignette</button><button data-act="fx:bulge" title="Glass dome — curved tube face (no text warp)">Curve</button>
       </span>
     </div>
     <div class="gb-look-row" data-row="wear">
       <span class="gb-look-key">Wear</span>
       <span class="gb-look-seg" data-seg="wear">
-        <button data-act="wear:new">New</button><button data-act="wear:worn">Worn</button><button data-act="wear:cracked">Cracked</button>
+        <button data-act="wear:new">New</button><button data-act="wear:worn">Worn</button><button data-act="wear:cracked">Cracked</button><button data-act="wear:glass" title="Fractured screen glass — scattered hairline cracks on any theme">Glass</button>
       </span>
     </div>
     <div class="gb-look-row" data-row="frame">
@@ -2162,8 +2062,8 @@ async function main() {
       Array.from({ length: CRT_STEPS }, (_, i) => `<i class="${i < filled ? "on" : ""}"></i>`).join("");
     (look.querySelector('[data-slot="crtnum"]') as HTMLElement).textContent = `${filled}/${CRT_STEPS}`;
     look.querySelectorAll('[data-seg="fx"] button').forEach((b) => {
-      const which = (b as HTMLElement).dataset.act!.split(":")[1];
-      b.setAttribute("aria-pressed", String(which === "sweep" ? crtSweep : crtNoiseFx));
+      const which = (b as HTMLElement).dataset.act!.split(":")[1] as CrtFx;
+      b.setAttribute("aria-pressed", String(crtFxOn(which)));
     });
     look.querySelectorAll('[data-seg="wear"] button').forEach((b) =>
       b.setAttribute("aria-pressed", String((b as HTMLElement).dataset.act!.split(":")[1] === wearLevel)));
@@ -2186,7 +2086,7 @@ async function main() {
     else if (k === "tone") { setTone(v as "dark" | "light" | "sepia"); lookActiveRow = "tone"; }
     else if (k === "crt") { stepCrt(parseInt(v, 10)); lookActiveRow = "crt"; }
     else if (k === "crtint") { adjustCrtDensity(parseInt(v, 10)); lookActiveRow = "crt"; }
-    else if (k === "fx") { setCrtFx(v as "sweep" | "noise", v === "sweep" ? !crtSweep : !crtNoiseFx); lookActiveRow = "fx"; }
+    else if (k === "fx") { setCrtFx(v as CrtFx, !crtFxOn(v as CrtFx)); lookActiveRow = "fx"; }
     else if (k === "wear") { setWear(v as WearLevel); lookActiveRow = "wear"; }
     else if (k === "frame") { stepOuter(parseInt(v, 10)); lookActiveRow = "frame"; }
     else if (k === "divider") { stepInner(parseInt(v, 10)); lookActiveRow = "divider"; }
@@ -2243,7 +2143,14 @@ async function main() {
       if (lookActiveRow === "theme") cycleTheme(dir);
       else if (lookActiveRow === "tone") cycleTone(dir);
       else if (lookActiveRow === "crt") stepCrt(dir);
-      else if (lookActiveRow === "fx") setCrtFx(dir === 1 ? "noise" : "sweep", dir === 1 ? !crtNoiseFx : !crtSweep);
+      else if (lookActiveRow === "fx") {
+        // Move focus across the FX pills; Enter/Space then toggles the focused
+        // one via the button's own click handler (native, so no extra wiring).
+        const btns = [...look.querySelectorAll('[data-seg="fx"] button')] as HTMLElement[];
+        const cur = btns.indexOf(document.activeElement as HTMLElement);
+        const next = ((cur < 0 ? (dir === 1 ? -1 : 0) : cur) + dir + btns.length) % btns.length;
+        btns[next]?.focus();
+      }
       else if (lookActiveRow === "wear") cycleWear(dir);
       else if (lookActiveRow === "frame") stepOuter(dir);
       else if (lookActiveRow === "divider") stepInner(dir);
@@ -2879,26 +2786,68 @@ async function main() {
   let dragging = false;
   let offX = 0;
   let offY = 0;
+  // A press only becomes a real drag once the pointer travels past this many
+  // pixels. Until then the window neither follows nor snaps — so a plain CLICK
+  // on the chassis (common in cassette shells, where the whole photo frame is
+  // the drag handle) can no longer yank the window into a grid zone. That
+  // spurious snap-on-click was the post-2.1.5 regression; the title bar dragged
+  // exactly like this before the frame itself became draggable.
+  const DRAG_THRESHOLD = 6;
+  let downX = 0;
+  let downY = 0;
+  let moved = false;
   const dragStart = (el: HTMLElement) => (e: PointerEvent) => {
     // buttons and the clickable /help subtitle handle their own clicks
     if ((e.target as HTMLElement).closest("button, .gb-subtitle")) return;
-    // on the cassette frame only the bare chassis (the .gb itself) drags —
-    // the screen and the painted controls keep their own behaviour
-    if (el === gb && !(isCassetteLayout() && e.target === gb)) return;
+    // The bare chassis itself is a drag handle in EVERY layout (grab the top
+    // bar OR any exposed plastic edge — left, right, bottom); its children (the
+    // screen, the painted controls) keep their own behaviour. e.target === gb
+    // is true only on that bare border/padding, never on a child.
+    if (el === gb && e.target !== gb) return;
     dragging = true;
+    moved = false;
+    downX = e.screenX;
+    downY = e.screenY;
     offX = e.screenX - window.screenX;
     offY = e.screenY - window.screenY;
     el.setPointerCapture(e.pointerId);
   };
+  // Coalesce pointermoves into ONE setBounds per animation frame. Calling
+  // setBounds on every raw pointermove floods the main process on X11; the
+  // native move lags behind the cursor and the window visibly "chases"/flees
+  // the pointer. One move per frame with the freshest position tracks cleanly.
+  let pendingMove: Rect | null = null;
+  let moveRaf = 0;
+  const flushMove = () => {
+    moveRaf = 0;
+    if (!pendingMove || !dragging || isFull) return;
+    api.setBounds(pendingMove);
+    if (isFloating) windowed = pendingMove;
+    pendingMove = null;
+  };
   const dragMove = (e: PointerEvent) => {
     if (!dragging || isFull) return;
-    api.setBounds({ x: e.screenX - offX, y: e.screenY - offY, w: window.innerWidth, h: window.innerHeight });
-    if (isFloating) {
-      windowed = { x: e.screenX - offX, y: e.screenY - offY, w: window.innerWidth, h: window.innerHeight };
-    }
+    if (!moved &&
+        Math.abs(e.screenX - downX) < DRAG_THRESHOLD &&
+        Math.abs(e.screenY - downY) < DRAG_THRESHOLD) return;
+    moved = true;
+    pendingMove = { x: e.screenX - offX, y: e.screenY - offY, w: window.innerWidth, h: window.innerHeight };
+    if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
   };
-  top.addEventListener("pointerdown", dragStart(top));
-  top.addEventListener("pointermove", dragMove);
+  // Full-height grab rails down the left and right edges: same move cursor and
+  // same drag/snap behaviour as the top bar, so the window can be moved from
+  // either side too. Thin enough to sit over the plastic border and not steal
+  // the panes' content.
+  const edgeL = document.createElement("div");
+  edgeL.className = "gb-edge-drag left";
+  const edgeR = document.createElement("div");
+  edgeR.className = "gb-edge-drag right";
+  gb.append(edgeL, edgeR);
+  const dragHandles = [top, edgeL, edgeR];
+  for (const h of dragHandles) {
+    h.addEventListener("pointerdown", dragStart(h));
+    h.addEventListener("pointermove", dragMove);
+  }
   gb.addEventListener("pointerdown", dragStart(gb));
   gb.addEventListener("pointermove", dragMove);
   // Slide the window to a target grid slot. Ease-out so it "klizne".
@@ -2937,20 +2886,27 @@ async function main() {
 
   const endDrag = (e: PointerEvent) => {
     if (!dragging) return;
+    // Land the last queued move so the release position is the real one (while
+    // still "dragging" so flushMove's guard passes), then drop any pending
+    // frame and end the drag.
+    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
+    flushMove();
     dragging = false;
-    for (const el of [top, gb]) {
+    for (const el of [top, gb, edgeL, edgeR]) {
       try {
         el.releasePointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
     }
-    snapToZone();
+    // Only a genuine drag snaps — a click that never crossed the threshold
+    // leaves the window exactly where it was (the 2.1.5 feel).
+    if (moved) snapToZone();
   };
-  top.addEventListener("pointerup", endDrag);
-  top.addEventListener("pointercancel", endDrag);
-  gb.addEventListener("pointerup", endDrag);
-  gb.addEventListener("pointercancel", endDrag);
+  for (const h of [top, gb, edgeL, edgeR]) {
+    h.addEventListener("pointerup", endDrag);
+    h.addEventListener("pointercancel", endDrag);
+  }
 
   // ---- right-click menu (acts on the pane you clicked) ------------------
   let menu: HTMLElement | null = null;

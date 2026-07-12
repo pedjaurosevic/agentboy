@@ -15,7 +15,7 @@ export type CrtMode = "mask" | "grille" | "slot" | "glass" | "full" | "scanlines
 export type ThemeTone = "dark" | "light" | "sepia";
 // Wear axis: how battered the physical console reads. The old `worn` boolean
 // is folded into `wear` by the renderer at boot (see wearLevel init).
-export type WearLevel = "new" | "worn" | "cracked";
+export type WearLevel = "new" | "worn" | "cracked" | "glass";
 
 export interface TerminalConfig {
   shell?: string;
@@ -35,6 +35,10 @@ export interface TerminalConfig {
   crtIntensity?: number;
   crtSweep?: boolean;
   crtNoise?: boolean;
+  crtChroma?: boolean;
+  crtFlicker?: boolean;
+  crtVignette?: boolean;
+  crtBulge?: boolean;
   outerStyle?: ChassisStyle | null;
   innerStyle?: ChassisStyle | null;
   sfxMuted?: boolean;
@@ -85,7 +89,7 @@ export function loadConfig(): TerminalConfig {
 // fields into the user's config.
 const PERSISTED_KEYS = [
   "shell", "theme", "light", "tone", "border", "fontSize",
-  "worn", "wear", "layout", "crtMode", "crtIntensity", "crtSweep", "crtNoise", "outerStyle", "innerStyle", "sfxMuted",
+  "worn", "wear", "layout", "crtMode", "crtIntensity", "crtSweep", "crtNoise", "crtChroma", "crtFlicker", "crtVignette", "crtBulge", "outerStyle", "innerStyle", "sfxMuted",
   "osc98",
 ] as const;
 
