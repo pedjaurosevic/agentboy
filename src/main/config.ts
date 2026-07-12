@@ -63,7 +63,10 @@ export function loadConfig(): TerminalConfig {
     try {
       const raw = readFileSync(legacyConfigPath, "utf8");
       const parsed = JSON.parse(raw);
-      writeFileSync(configPath, JSON.stringify({ ...defaultConfig, ...parsed }, null, 2), "utf8");
+      // Only merge a real object — a legacy file holding a bare 42/"x"/null
+      // (or an array) must not spread into a garbage config.
+      const legacy = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      writeFileSync(configPath, JSON.stringify({ ...defaultConfig, ...legacy }, null, 2), "utf8");
     } catch (e) {
       // Fall through to default handling below
     }

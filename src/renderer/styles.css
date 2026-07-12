@@ -438,11 +438,11 @@ body {
   background: transparent;
 }
 .gb-divider.vert {
-  width: 6px;
+  width: 9px;
   cursor: col-resize;
 }
 .gb-divider.horiz {
-  height: 6px;
+  height: 9px;
   cursor: row-resize;
 }
 .gb-divider::before {

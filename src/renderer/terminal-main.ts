@@ -140,7 +140,7 @@ async function main() {
               <button class="gb-activity-close" title="Close (Esc)">&#10005;</button>
             </div>
             <div class="gb-help-body gb-activity-body"></div>
-            <div class="gb-help-footer">Ctrl+Shift+L toggles this &middot; right-click F1 undoes the last checkpoint</div>
+            <div class="gb-help-footer">Ctrl+Shift+L toggles this &middot; select a checkpoint below to restore</div>
           </div>
         </div>
       </div>
@@ -1007,7 +1007,7 @@ async function main() {
     };
   };
 
-  dialogYes.addEventListener("click", async () => {
+  const answerApprovalYes = async () => {
     // Snapshot the resolver + pty before the await: a second OSC 98 prompt (or
     // Esc) can overwrite the module-level activeDialogResolve/activeDialogPtyId
     // while gitSave runs, which would otherwise make this YES answer the wrong
@@ -1025,25 +1025,37 @@ async function main() {
         : "auto-checkpoint before YES";
       logActivity({ kind: "checkpoint", text, where: activeDialogWhere });
     } else {
+      // No checkpoint was made. Surface it actively (not just via the origin
+      // line, which is easy to miss): a real failure in a git repo, OR the
+      // shell dir being unresolvable so no repo could be found. "Not a git
+      // repo" stays quiet — nothing to checkpoint and the origin line says so.
       const origin = await api.ptyOrigin(ptyId ?? undefined).catch(() => null);
       if (origin?.gitRoot) showToast("Checkpoint save failed");
+      else if (!origin?.cwd) showToast("No checkpoint — shell directory unknown");
     }
     // Only answer if this dialog is still the active one (not superseded/closed).
     if (activeDialogResolve === resolve) resolve(true);
-  });
-
-  dialogNo.addEventListener("click", () => {
+  };
+  const answerApprovalNo = () => {
     if (activeDialogResolve) activeDialogResolve(false);
-  });
+  };
+
+  dialogYes.addEventListener("click", answerApprovalYes);
+  dialogNo.addEventListener("click", answerApprovalNo);
 
   dialogDiff.addEventListener("click", () => {
     showDiffPanel();
   });
 
   dialog.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
+    // Y / N answer the prompt directly (terminal muscle-memory) alongside the
+    // focused YES button (Enter) and Esc (= NO).
+    if (e.key === "Escape" || e.key === "n" || e.key === "N") {
       e.preventDefault();
-      if (activeDialogResolve) activeDialogResolve(false);
+      answerApprovalNo();
+    } else if (e.key === "y" || e.key === "Y") {
+      e.preventDefault();
+      void answerApprovalYes();
     }
   });
 
@@ -1283,6 +1295,11 @@ async function main() {
         row.append(label, btn);
         activityBody.appendChild(row);
       }
+      const note = document.createElement("div");
+      note.className = "gb-help-row gb-activity-note";
+      note.textContent =
+        "Restore hard-resets tracked files to the checkpoint; uncommitted work is stashed first, and any new (untracked) files are kept.";
+      activityBody.appendChild(note);
     }
   };
   renderActivity = () => {
@@ -1750,21 +1767,29 @@ async function main() {
       if (e.ctrlKey && (e.key === "+" || e.key === "=")) return setFont(fontSize + 1), false;
       if (e.ctrlKey && e.key === "-") return setFont(fontSize - 1), false;
       if (e.ctrlKey && e.key === "0") return setFont(BASE_FONT), false;
-      if (e.key === "F7") return adjustCrtDensity(1), false; // matches the F7 CRT+ button/help
-      if (e.key === "F10") return toggleScreensaver(), false; // matches the SAVER button/help (toggle)
-      // F12 lands at the bottom (matches the on-screen BOTTOM button label).
-      if (e.key === "F12") {
-        term.scrollToBottom();
-        // xterm can ignore scrollToBottom while a TUI is mid-repaint; force
-        // the viewport as well (same as the BOTTOM button).
-        const vp = el.querySelector(".xterm-viewport") as HTMLElement | null;
-        if (vp) vp.scrollTop = vp.scrollHeight;
-        return false;
+      // Bare F-keys (F7 CRT+, F10 SAVER, F11 FLOAT, F12 BOTTOM) drive chassis
+      // actions ONLY at a normal shell prompt. A full-screen TUI (htop, mc,
+      // nano, vim, lazygit…) runs on the ALTERNATE buffer and binds these keys
+      // itself (F10 = quit in htop/mc); while it is active we must let them
+      // reach the PTY instead of stealing them. The same actions stay
+      // available on the on-screen chassis buttons regardless.
+      if (term.buffer.active.type !== "alternate") {
+        if (e.key === "F7") return adjustCrtDensity(1), false; // matches the F7 CRT+ button/help
+        if (e.key === "F10") return toggleScreensaver(), false; // matches the SAVER button/help (toggle)
+        // F12 lands at the bottom (matches the on-screen BOTTOM button label).
+        if (e.key === "F12") {
+          term.scrollToBottom();
+          // xterm can ignore scrollToBottom while a TUI is mid-repaint; force
+          // the viewport as well (same as the BOTTOM button).
+          const vp = el.querySelector(".xterm-viewport") as HTMLElement | null;
+          if (vp) vp.scrollTop = vp.scrollHeight;
+          return false;
+        }
+        // Matches the on-screen F11 FLOAT button/help (used to call
+        // toggleNoFrame — F8's job, not F11's; same mismatch class as the
+        // F7/F10 fixes in 2.0.3).
+        if (e.key === "F11") return toggleFloat(), false;
       }
-      // Matches the on-screen F11 FLOAT button/help (used to call
-      // toggleNoFrame — F8's job, not F11's; same mismatch class as the
-      // F7/F10 fixes in 2.0.3).
-      if (e.key === "F11") return toggleFloat(), false;
       if (e.type === "keydown" && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         playTypeTick();
       }
@@ -1800,9 +1825,24 @@ async function main() {
     try {
       spawned = await api.pty.spawn({ cols: p.term.cols, rows: p.term.rows });
     } catch {
-      // Spawn itself failed (even the fallback shell) — say so instead of
-      // leaving a dead, silent pane.
+      // Spawn itself failed (even the fallback shell) — never leave a dead,
+      // silent pane the user can type into with no effect.
       showToast('Shell failed to start — check "shell" in ~/.agentboy.json');
+      const soleTerminal = !p.el.parentElement || p.el.parentElement === panesRoot;
+      if (soleTerminal) {
+        // Don't vanish the whole window on the very first pane — leave a
+        // readable notice on the (already-opened) terminal so the cause is seen.
+        try {
+          p.term.write(
+            '\r\n\x1b[31m[shell failed to start]\x1b[0m\r\n' +
+              'Check the "shell" value in ~/.agentboy.json, then reopen.\r\n'
+          );
+        } catch {
+          /* term already gone */
+        }
+      } else {
+        closePane(p); // a split pane can just be removed; the sibling stays
+      }
       return;
     }
     const { id, shellFallback } = spawned;
@@ -1829,7 +1869,7 @@ async function main() {
     );
     p.unsubs.push(
       api.pty.onExit((m) => {
-        if (m.id === id) closePane(p);
+        if (m.id === id) closePane(p, m.code);
       })
     );
 
@@ -1857,6 +1897,11 @@ async function main() {
   // orientation "row" = side-by-side (split vertical); "column" = stacked
   // (split horizontal).
   const splitPane = (p: Pane, orientation: "row" | "column") => {
+    // Refuse to split a pane that is already too small — otherwise repeated
+    // splits shrink terminals down to unusable 2×2-cell slivers with no way
+    // back short of "Merge splits into one".
+    if (orientation === "row" && p.term.cols < 24) return void showToast("Pane too narrow to split");
+    if (orientation === "column" && p.term.rows < 12) return void showToast("Pane too short to split");
     const parent = p.el.parentElement;
     if (!parent) return;
     const split = document.createElement("div");
@@ -1874,26 +1919,47 @@ async function main() {
     setActive(np);
   };
 
-  const closePane = (p: Pane) => {
+  const closePane = (p: Pane, exitCode?: number) => {
+    const wasActive = active === p;
     const parent = p.el.parentElement;
+    const isLast = !parent || parent === panesRoot;
+    // A crash = the shell exited with a non-zero code (not a clean `exit`, and
+    // not a user-initiated close, which passes no code).
+    const crashed = typeof exitCode === "number" && exitCode !== 0;
+    if (crashed && isLast) {
+      // The sole pane's shell died unexpectedly. Don't tear the window down
+      // silently — leave the dead terminal visible with a notice so the user
+      // sees WHAT happened and closes on their own terms.
+      try {
+        p.term.write(`\r\n\x1b[31m[shell exited with code ${exitCode}]\x1b[0m — close the window when ready.\r\n`);
+      } catch {
+        /* term already gone */
+      }
+      showToast(`Shell exited (code ${exitCode})`);
+      return;
+    }
     disposePane(p);
-    if (!parent || parent === panesRoot) {
+    if (isLast) {
       api.closeTerminal(); // closed the last pane -> close the window
       return;
     }
+    if (crashed) showToast(`Pane shell exited (code ${exitCode})`);
     // parent is a .gb-split [sibling, divider, p] (in some order); promote the
     // sibling into the split's place.
-    const sibling = Array.from(parent.children).find(
+    const sibling = Array.from(parent!.children).find(
       (c) => c !== p.el && !c.classList.contains("gb-divider")
     ) as HTMLElement | undefined;
-    const grandparent = parent.parentElement;
+    const grandparent = parent!.parentElement;
     if (sibling && grandparent) {
       sibling.style.flex = "1 1 0";
-      grandparent.replaceChild(sibling, parent);
+      grandparent.replaceChild(sibling, parent!);
       const next = sibling.classList.contains("gb-pane")
         ? panes.get(sibling)
         : panes.get(sibling.querySelector(".gb-pane") as HTMLElement);
-      if (next) setActive(next);
+      // Only move focus when the pane that closed was the focused one — a
+      // BACKGROUND pane dying (e.g. a one-off `exit` in another split) must not
+      // yank the cursor out from under the user's active shell.
+      if (next && wasActive) setActive(next);
     }
   };
 
@@ -1938,6 +2004,11 @@ async function main() {
     };
     divider.addEventListener("pointerup", end);
     divider.addEventListener("pointercancel", end);
+    // Double-click resets the split to an even 50/50 — the standard escape from
+    // a lopsided drag.
+    divider.addEventListener("dblclick", () => {
+      firstChild.style.flex = "1 1 0";
+    });
   };
 
   // ---- first pane -------------------------------------------------------
@@ -1946,6 +2017,17 @@ async function main() {
   await spawnPane(first);
   api.focusWindow();
   setActive(first);
+  // One-time hint the very first launch: the controls (copy/paste, split,
+  // LOOK/MODE) live behind the /help overlay and a right-click menu, neither of
+  // which is obvious. Gated on a localStorage flag so it shows exactly once.
+  try {
+    if (!localStorage.getItem("agentboy.seenHint")) {
+      localStorage.setItem("agentboy.seenHint", "1");
+      setTimeout(() => showToast("Right-click for the menu · click “▸ agentboy /help” for all controls"), 900);
+    }
+  } catch {
+    /* localStorage unavailable — skip the hint */
+  }
   applyThemePreset(currentPresetId, currentIsLight);
   if (config.border === "retro") {
     gb.classList.add("eink-color");
@@ -2116,7 +2198,12 @@ async function main() {
   // Alt+L (not Ctrl+L) so the shell keeps Ctrl+L for clear-screen — the near-
   // universal terminal convention.
   window.addEventListener("keydown", (e) => {
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === "l" || e.key === "L")) {
+    // While a full-screen TUI (alternate buffer) owns the active pane, let
+    // Alt+letter combos reach it (many editors/TUIs bind Alt mnemonics) rather
+    // than stealing them for LOOK/MODE. At a normal shell prompt they stay the
+    // primary keyboard entry to the appearance/layout menus.
+    const altScreenActive = active?.term.buffer.active.type === "alternate";
+    if (!altScreenActive && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === "l" || e.key === "L")) {
       e.preventDefault();
       e.stopPropagation();
       toggleLook();
@@ -2124,7 +2211,7 @@ async function main() {
     }
     // Alt+M cycles the layout MODE — keyboard fallback for the cassette
     // shells, where the HTML MODE switch is hidden under the artwork.
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === "m" || e.key === "M")) {
+    if (!altScreenActive && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === "m" || e.key === "M")) {
       e.preventDefault();
       e.stopPropagation();
       cycleLayout(1);
@@ -2932,6 +3019,7 @@ async function main() {
       ...noFrameItems,
       ["Split vertical", () => splitPane(pane, "row"), true],
       ["Split horizontal", () => splitPane(pane, "column"), true],
+      ["Merge splits into one", collapseToSingle, canClose],
       [canClose ? "Close pane" : "Close terminal", () => closePane(pane), true],
       "sep",
       ["Copy", () => copySelection(pane), hasSel],
