@@ -11,7 +11,9 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "scripts/ensure-native.js",
+    "scripts/postinstall.js"
   ],
   "repository": {
     "type": "git",
@@ -49,7 +51,7 @@
     "copy:static": "mkdir -p dist/renderer/assets dist/renderer/assets/music && cp src/assets/music/*.mp3 dist/renderer/assets/music/ && cp src/renderer/terminal.html src/renderer/styles.css dist/renderer/ && cp src/assets/app-icon.png dist/renderer/assets/ && cp -r src/assets/cassette dist/renderer/assets/",
     "build": "npm run build:main && npm run build:renderer && npm run copy:static",
     "rebuild:native": "electron-rebuild -f -w node-pty",
-    "postinstall": "electron-rebuild -f -w node-pty",
+    "postinstall": "node scripts/postinstall.js",
     "prepublishOnly": "npm run clean && npm run build",
     "dev": "npm run build && electron .",
     "start": "npm run build && electron .",
