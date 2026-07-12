@@ -36,13 +36,17 @@ export interface TerminalConfigData {
   border?: "dark" | "retro";
   fontSize?: number;
   worn?: boolean;
-  wear?: "new" | "worn" | "cracked";
+  wear?: "new" | "worn" | "cracked" | "glass";
   layout?: "compact" | "full" | "roboterminal" | "robogrip" | "fable"
     | "cassette1-light" | "cassette1-dark" | "cassette2-light" | "cassette2-dark";
   crtMode?: "mask" | "grille" | "slot" | "glass" | "full" | "scanlines" | "vector" | "off";
   crtIntensity?: number;
   crtSweep?: boolean;
   crtNoise?: boolean;
+  crtChroma?: boolean;
+  crtFlicker?: boolean;
+  crtVignette?: boolean;
+  crtBulge?: boolean;
   outerStyle?: ChassisStyle | null;
   innerStyle?: ChassisStyle | null;
   sfxMuted?: boolean;

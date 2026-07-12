@@ -16,3 +16,6 @@ NOTE.md
 TODO.md
 PLAN.md
 scratchpad/
+
+# Local Claude Code session state (settings, memory) — not public
+.claude/
