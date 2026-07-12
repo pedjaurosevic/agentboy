@@ -19,7 +19,7 @@ A retro handheld-console terminal designed specifically for AI pair programming.
 - 🎮 **Nostalgic UI**: A Game Boy style chassis with labelled function buttons, A/B buttons, a status LED and a speaker grille — all rendered entirely with CSS.
 - 🕹️ **Five Shell Layouts (MODE)**: the round MODE knob cycles Compact (LOOK menu + 5 window keys) → Full (all 12 keys) → **Robo-Terminal** (brushed gunmetal with machined vent ribs on the side rails) → **Robo-Grip** (brushed gunmetal + rubber side grips) → **Fable Deck** (midnight lacquer + brass, 12 bigger keys in two rows). FRAME re-liveries the robo shells **and** the Fable Deck; TONE Light/Sepia flips them to worn-beige / ivory versions (except the vivid Red and Atomic Orange frames, which stay fully saturated in every tone — their washed looks are the separate Faded Red / Faded Orange stops).
 - 🎨 **Fourteen Themes × Three Tones**: Agentboy DMG, Monochrome E-Ink, Charcoal, G-Shock Red, Dystopian, Phosphor, Cyberpunk, Sapphire, Atomic Orange, Rust Bunker, Vintage Hi-Fi, Olive Drab, Phosphor Red and Phosphor Amber — each in a dark, paper-light or warm sepia tone, with contrast auto-clamped to stay readable.
-- 📺 **Authentic CRT Effects**: Eight tube modes — shadow mask, aperture grille, slot mask, curved glass (with a bulge that inflates with intensity), the full tube, clean scanlines, vector glow, and off — plus combinable **Sweep** (rolling retrace band) and **Noise** (broadcast grain) extras, an old-tube turn-on flash, phosphor bloom and 20 intensity steps.
+- 📺 **Authentic CRT Effects**: Eight tube modes — shadow mask, aperture grille, slot mask, curved glass (with a bulge that inflates with intensity), the full tube, clean scanlines, vector glow, and off — plus six combinable extras that stack on any mode: **Sweep** (rolling retrace band), **Noise** (broadcast grain), **Chroma** (RGB fringe), **Flicker**, **Vignette**, and **Curve** — an old-tube turn-on flash, phosphor bloom and 20 intensity steps.
 - 🤖 **LLM Native Approval Flow**: CLI tools and agents can request user approval through an escape sequence (`OSC 98 ; prompt=<question>`) — the terminal shows a retro RPG-style dialog, git-checkpoints the pane's working directory on YES, and answers `y`/`n` back to the shell. The dialog renders **on the chassis** (outside the screen) and names the requesting shell's working directory and the exact git repo a YES will commit — so a spoofed escape sequence, which can only paint inside the screen, can't fake it. Set `"osc98": "led-only"` (flag the LED, no dialog, no auto-answer) or `"off"` in the config to lock it down further. The full escape-sequence reference, including the anti-spoofing design, lives in **[docs/protocol.md](docs/protocol.md)**.
 - 🔍 **Diff Inspector Cartridge**: View proposed code changes in a dedicated UI panel *before* accepting them from the AI agent.
 - ⏪ **Undo Checkpoints**: Natively tracks AI code modifications via Git, in the working directory of the active pane's shell. Right-click the `F1` theme button to instantly roll back if the AI makes a mistake.
@@ -85,14 +85,14 @@ rm ~/.agentboy.json   # optional: your saved appearance/config
 Every button has its function printed on the shell above it. These are on-screen buttons on the chassis, not physical F-keys (the F1–F12 labels are position markers, like SELECT/START on a real handheld).
 
 - **`MODE`** (round knurled knob at the head of the right cluster): cycle the shell layout — Compact → Full → Robo-Terminal → Robo-Grip → Fable Deck (`Alt+M` from the keyboard)
-- **`LOOK`** (Compact layout, or `Alt+L` anywhere): the appearance menu — Theme (14 presets), Tone (dark / light / sepia), CRT (8 modes × 20 intensity steps), FX (Sweep / Noise — independent CRT extras that stack on any mode except Off), Wear (new / worn / cracked), Frame and Divider; live-apply, the terminal stays visible above it
+- **`LOOK`** (Compact layout, or `Alt+L` anywhere): the appearance menu — Theme (14 presets), Tone (dark / light / sepia), CRT (8 modes × 20 intensity steps), FX (Sweep / Noise / Chroma / Flicker / Vignette / Curve — independent CRT extras that stack on any mode except Off), Wear (new / worn / cracked / glass), Frame and Divider; live-apply, the terminal stays visible above it
 - **Full / robo / Deck layouts — all 12 keys** (Compact shows the last five as F2–F6):
   - **F1 `TONE`**: dark → light → sepia (right-click reverses)
   - **F2 `FRAME`**: cycle the chassis frame style — Default → Dark → Retro → White → Red → Faded Red → Phosphor → Cyberpunk → Ocean → Mecha → Atomic Orange → Faded Orange → Grape GBC → Woodgrain; re-liveries the robo shells and the Fable Deck too
   - **F3 `THM`**: cycle the theme preset (1–14, right-click reverses)
   - **F4 `CRT`**: cycle the CRT effect — Shadow Mask → Aperture Grille → Slot Mask → Glass → Full → Scanlines → Vector Glow → Off (coming back from Off plays the turn-on flash)
   - **F5 `CRT−` / F6 `CRT+`**: CRT intensity down / up (20 levels)
-  - **F7 `WEAR`**: chassis finish — new → worn → cracked
+  - **F7 `WEAR`**: chassis finish — new → worn → cracked → glass
   - **F8 `BARE`**: hide the chassis — bare terminal (same key or right-click restores)
   - **F9 `SAVER`**: toggle the cmatrix screensaver on / off (any key or click exits too)
   - **F10 `FLOAT`**: free-floating window — leave the 3×2 snap grid, resize freely
@@ -143,7 +143,7 @@ Settings live in `~/.agentboy.json` (an existing `~/.retro-terminal.json` is mig
 }
 ```
 
-`tone` is `dark`, `light` or `sepia`; `wear` is `new`, `worn` or `cracked`; `layout` is `compact`, `full`, `roboterminal`, `robogrip` or `fable`; `crtMode` is one of `mask`, `grille`, `slot`, `glass`, `full`, `scanlines`, `vector`, `off`; `crtIntensity` is `0`–`19`; `crtSweep`/`crtNoise` are booleans for the combinable CRT extras; `outerStyle`/`innerStyle` accept `dark`, `retro`, `white`, `red`, `red-pale`, `phosphor`, `cyberpunk`, `ocean`, `mecha`, `orange`, `orange-pale`, `grape`, `wood` or `null` for the default chassis; `osc98` is `on` (default), `led-only`, or `off`.
+`tone` is `dark`, `light` or `sepia`; `wear` is `new`, `worn`, `cracked` or `glass`; `layout` is `compact`, `full`, `roboterminal`, `robogrip` or `fable`; `crtMode` is one of `mask`, `grille`, `slot`, `glass`, `full`, `scanlines`, `vector`, `off`; `crtIntensity` is `0`–`19`; `crtSweep`/`crtNoise`/`crtChroma`/`crtFlicker`/`crtVignette`/`crtBulge` are booleans for the combinable CRT extras; `outerStyle`/`innerStyle` accept `dark`, `retro`, `white`, `red`, `red-pale`, `phosphor`, `cyberpunk`, `ocean`, `mecha`, `orange`, `orange-pale`, `grape`, `wood` or `null` for the default chassis; `osc98` is `on` (default), `led-only`, or `off`.
 
 ## Development
 

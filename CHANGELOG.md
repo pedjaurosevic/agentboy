@@ -3,6 +3,78 @@
 All notable changes to AgentBoy are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-07-12
+
+A functionality/UX pass driven by a full audit. Fixes real bugs on the edges
+of the terminal and the "last mile" of the agent flow; the core was already
+sound.
+
+### Fixed
+- **Bare F-keys no longer stolen from full-screen TUIs.** F7/F10/F11/F12 drove
+  chassis actions unconditionally, so htop/mc/nano/vim/lazygit inside agentboy
+  could never receive them (F10 = quit in htop/mc). They now fire only at a
+  normal shell prompt; while a TUI owns the alternate screen buffer the keys
+  pass through to it. The same actions stay on the on-screen chassis buttons.
+- **A background pane's shell dying no longer steals focus.** `closePane` only
+  moves focus to a sibling when the pane that closed was the active one.
+- **A crashed shell is no longer silent.** A non-zero exit surfaces the code
+  (toast); the sole pane's crash leaves the terminal visible with a notice
+  instead of instantly closing the window.
+- **A failed spawn no longer leaves a dead, typeable pane** — a split pane is
+  removed; the first pane shows a readable "shell failed to start" notice.
+- **Alt+L / Alt+M** no longer swallowed while a full-screen TUI is active
+  (they stay the LOOK/MODE shortcut at the shell prompt).
+- **LED heuristic** now recognises aider-style `(Y)es/(N)o` / lettered prompts,
+  and no longer lights on a `(y/n)` token that merely appears mid-sentence.
+- Legacy `.retro-terminal.json` migration ignores a non-object file instead of
+  spreading garbage into the new config.
+- The approval **DIFF** button and the diff inspector show `git diff HEAD`
+  (staged + unstaged vs the last commit) — the full picture, not just unstaged.
+
+### Added
+- **`y` / `n` keys answer the approval dialog** directly (alongside Enter = the
+  focused YES, and Esc = NO).
+- **"Merge splits into one"** context-menu action (wires up the previously
+  dead `collapseToSingle`) — a one-click way back from an over-split layout.
+- **Split guard**: refuses to split a pane that is already too small to stay
+  usable, with a toast.
+- **Double-click a split divider** resets it to an even 50/50; the divider grab
+  target is wider (9px).
+- **First-run hint** (once): points at the right-click menu and the `/help`
+  overlay for controls.
+- Help overlay documents the **Activity panel (Ctrl+Shift+L)** and the full
+  copy/paste model (auto-copy on select, Ctrl/Shift+Insert, sanitised paste).
+- The Activity panel notes that **restore keeps untracked files** (partial by
+  design).
+- A toast when a YES **auto-checkpoint could not be made** because the shell
+  directory was unresolvable (previously silent).
+
+### Docs
+- README/site: correct the wear axis (adds **Glass**) and list all six CRT FX
+  (Sweep / Noise / Chroma / Flicker / Vignette / Curve).
+
+## [2.3.0] - 2026-07-12
+
+### Fixed
+- **Window drag/snap regression (post-2.1.5)**: a plain click on the chassis
+  snapped the window into a grid third/sixth. A movement threshold now means
+  only a genuine drag snaps — a click leaves the window put.
+- **Drag no longer "chases" the cursor on X11**: the drag is rAF-throttled to
+  one `setBounds` per frame instead of one per pointer-move.
+
+### Added
+- **Bare-chassis drag in every layout**, plus full-height left/right grab
+  rails with a move cursor; window controls raised above the rails.
+- **"Glass" wear stop**: scattered hairline cracks in the screen glass on any
+  theme (`glassCracksSvg`). Dystopian's fixed corner crack is folded into it.
+- **Four combinable CRT FX pills** alongside Sweep/Noise — **Chroma** (RGB
+  fringe via an SVG channel-split filter), **Flicker**, **Vignette**, and
+  **Curve** — stacking on any base tube mode and persisted. Vignette/Curve
+  render on the `.crt` overlay plane so they sit above the opaque terminal text.
+
+### Changed
+- Chassis SVG painters extracted into `src/renderer/chassis-art.ts`.
+
 ## [2.2.6] - 2026-07-12
 
 ### Fixed

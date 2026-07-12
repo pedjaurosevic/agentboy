@@ -367,10 +367,18 @@ function wireIpc() {
   ipcMain.handle("git:diff", (e, ptyId?: number) => {
     const cwd = gitCwd(e, ptyId);
     if (!cwd) return "Cannot resolve the active pane's working directory.";
+    // `git diff HEAD` = staged AND unstaged changes vs the last commit — the
+    // full "what have I changed" picture, and what a checkpoint captures. Plain
+    // `git diff` hides anything already `git add`-ed. On an unborn HEAD (no
+    // commits yet) HEAD is not a valid revision, so fall back to plain diff.
     try {
-      return execFileSync("git", ["diff"], { cwd, encoding: "utf8", timeout: 5000 });
-    } catch (err: any) {
-      return err.stdout || err.message;
+      return execFileSync("git", ["diff", "HEAD"], { cwd, encoding: "utf8", timeout: 5000 });
+    } catch {
+      try {
+        return execFileSync("git", ["diff"], { cwd, encoding: "utf8", timeout: 5000 });
+      } catch (err: any) {
+        return err.stdout || err.message;
+      }
     }
   });
 

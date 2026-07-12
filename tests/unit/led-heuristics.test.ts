@@ -9,6 +9,15 @@ test("y/n question on the last row → waiting", () => {
   assert.ok(looksLikeChoicePrompt(["Overwrite? [Y/n]", "some earlier output"]));
 });
 
+test("aider-style lettered prompt → waiting", () => {
+  assert.ok(looksLikeChoicePrompt(["Add file to the chat? (Y)es/(N)o/(A)ll [Yes]:"]));
+  assert.ok(looksLikeChoicePrompt(["Commit changes? (Y)es/(N)o"]));
+});
+
+test("a y/n token mid-sentence is not a prompt → not waiting", () => {
+  assert.ok(!looksLikeChoicePrompt(["The flag accepts (y/n) to toggle the feature."]));
+});
+
 test("numbered menu with the selector on the last row → waiting", () => {
   assert.ok(
     looksLikeChoicePrompt([
