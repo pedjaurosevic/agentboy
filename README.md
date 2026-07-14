@@ -14,6 +14,11 @@ A retro handheld-console terminal designed specifically for AI pair programming.
 | --- | --- | --- |
 | ![approval dialog](docs/shots/approval-dialog.png) | ![G-Shock Red](docs/shots/theme-gshock-light.png) | ![screensaver](docs/shots/saver.png) |
 
+<p align="center">
+  <strong>Five chassis layouts — one real terminal</strong><br><br>
+  <img src="docs/shots/mode-cycle.gif" width="720" alt="AgentBoy cycling through Compact, Full, Robo-Terminal, Robo-Grip and Fable Deck layouts">
+</p>
+
 ## Features
 
 - 🎮 **Nostalgic UI**: A Game Boy style chassis with labelled function buttons, A/B buttons, a status LED and a speaker grille — all rendered entirely with CSS.
