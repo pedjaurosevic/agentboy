@@ -82,6 +82,23 @@
   .led-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
   .led-chip { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; }
+  .status-demo {
+    min-height: 190px; padding: 28px; display: grid; place-items: center;
+    background:
+      repeating-linear-gradient(0deg, rgba(185,228,138,0.035) 0 1px, transparent 1px 4px),
+      radial-gradient(circle at 50% 30%, #19351f, #09110b 72%);
+    border-bottom: 1px solid var(--line);
+  }
+  .status-screen {
+    width: min(100%, 310px); padding: 18px 20px; border: 1px solid #3f6843;
+    border-radius: 8px; background: rgba(5,14,7,0.88); box-shadow: inset 0 0 24px rgba(0,0,0,0.75), 0 0 24px rgba(185,228,138,0.08);
+  }
+  .status-screen .label { display: block; margin-bottom: 14px; color: var(--green); }
+  .status-line { display: flex; align-items: center; gap: 11px; color: var(--dim); font-size: 12px; }
+  .status-line + .status-line { margin-top: 9px; }
+  .status-line.active { color: var(--ink); }
+  .status-line.active .dot { animation: led-pulse 1.3s ease-in-out infinite; }
+  @keyframes led-pulse { 50% { opacity: 0.4; box-shadow: 0 0 3px currentColor; } }
 
   /* ---- interactive theme gallery ---- */
   #themes { --acc: #b9e48a; }
@@ -150,7 +167,15 @@
         </div>
       </div>
       <div class="card">
-        <img src="shots/hero-dmg-dark.png" alt="ACTION status LED">
+        <div class="status-demo" role="img" aria-label="ACTION status LED showing that the agent needs approval">
+          <div class="status-screen">
+            <span class="label">ACTION MONITOR</span>
+            <div class="status-line"><i class="dot" style="color:#8a7a2f;background:#8a7a2f"></i> IDLE</div>
+            <div class="status-line"><i class="dot" style="color:#ffe08a;background:#ffe08a"></i> USER TYPING</div>
+            <div class="status-line"><i class="dot" style="color:#b9e48a;background:#b9e48a"></i> AGENT WORKING</div>
+            <div class="status-line active"><i class="dot" style="color:#ff2a33;background:#ff2a33"></i> APPROVAL NEEDED</div>
+          </div>
+        </div>
         <div class="body">
           <h3>ACTION status LED</h3>
           <p>A traffic light on the chassis shows what's happening at a glance — and turns <b style="color:var(--red)">red</b> when the agent prints a numbered option menu or a y/n question and waits on you.</p>
