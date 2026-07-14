@@ -11,23 +11,23 @@ CY=$'\e[36m'; GR=$'\e[32m'; RD=$'\e[31m'; YL=$'\e[33m'
 W=$'\e[97m'
 printf '%s\n' \
 "${B}\$ git log --oneline -3${R}" \
-"${YL}80f5f2a${R} Copy-on-select to real clipboard" \
-"${YL}427c88f${R} Keyboard F12 for BOTTOM" \
-"${YL}f83b3e0${R} Backdrop-invert selection" \
+"${YL}9d7c4af${R} Add retry budget metrics" \
+"${YL}42bc1e8${R} Harden request cancellation" \
+"${YL}f83b3e0${R} Cover timeout edge cases" \
 "" \
 "${B}\$ claude${R}" \
-"${W}❯ fix the failing slugify test${R}" \
+"${W}❯ fix the flaky retry backoff test${R}" \
 "" \
-"${CY}●${R} ${B}Read${R}${D}(tests/test_utils.py)${R}" \
-"  ${D}└─ 42 lines${R}" \
-"${CY}●${R} ${B}Edit${R}${D}(src/utils.py)${R}" \
-"  ${RD}-  return text.lower().replace(\" \", \"-\")${R}" \
-"  ${GR}+  text = normalize(\"NFKD\", text)${R}" \
-"  ${GR}+  return ascii_fold(text).lower().replace(\" \", \"-\")${R}" \
-"${CY}●${R} ${B}Bash${R}${D}(pytest -q tests/test_utils.py)${R}" \
-"  ${GR}✔ 5 passed${R} ${D}in 0.31s${R}" \
+"${CY}●${R} ${B}Read${R}${D}(tests/test_retry.py)${R}" \
+"  ${D}└─ 58 lines${R}" \
+"${CY}●${R} ${B}Edit${R}${D}(src/retry.py)${R}" \
+"  ${RD}-  delay = base * 2 ** attempt${R}" \
+"  ${GR}+  delay = min(max_delay, base * 2 ** attempt)${R}" \
+"  ${GR}+  return add_jitter(delay, rng)${R}" \
+"${CY}●${R} ${B}Bash${R}${D}(pytest -q tests/test_retry.py)${R}" \
+"  ${GR}✔ 6 passed${R} ${D}in 0.24s${R}" \
 "" \
-"${GR}●${R} Done — slugify now handles ${B}\"Čačak\" → \"cacak\"${R}"
+"${GR}●${R} Done — retries are capped and deterministic in tests${R}"
 printf "\n${B}\$ ${R}"
 # When the marker file exists, fire an OSC 98 approval request so the RPG
 # permission dialog can be photographed.
